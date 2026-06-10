@@ -940,6 +940,7 @@ const RawDataView = ({
                   className={`px-4 py-4 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors ${appliedMetrics.pm25 ? '' : 'hidden'} ${
                     selectedMetric === 'pm25' ? `${theme.bg} text-white hover:opacity-90` : 'text-gray-700'
                   }`}
+                  title="Particulate matter 2.5 (µg/m³)"
                 >
                   <div className="flex items-center gap-2">
                     PM 2.5
@@ -954,6 +955,7 @@ const RawDataView = ({
                   className={`px-4 py-4 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors ${appliedMetrics.co ? '' : 'hidden'} ${
                     selectedMetric === 'co' ? `${theme.bg} text-white hover:opacity-90` : 'text-gray-700'
                   }`}
+                  title="Carbon monoxide (ppm)"
                 >
                   <div className="flex items-center gap-2">
                     CO
@@ -968,9 +970,10 @@ const RawDataView = ({
                   className={`px-4 py-4 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors ${appliedMetrics.temp ? '' : 'hidden'} ${
                     selectedMetric === 'temp' ? `${theme.bg} text-white hover:opacity-90` : 'text-gray-700'
                   }`}
+                  title="Temperature"
                 >
                   <div className="flex items-center gap-2">
-                    Temperature (°C)
+                    TEMP (°C)
                     <SortIcon columnKey="temp" />
                   </div>
                 </th>
@@ -982,9 +985,10 @@ const RawDataView = ({
                   className={`px-4 py-4 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors ${appliedMetrics.humidity ? '' : 'hidden'} ${
                     selectedMetric === 'humidity' ? `${theme.bg} text-white hover:opacity-90` : 'text-gray-700'
                   }`}
+                  title="Humidity"
                 >
                   <div className="flex items-center gap-2">
-                    Humidity
+                    HUM (%)
                     <SortIcon columnKey="humidity" />
                   </div>
                 </th>
@@ -1346,7 +1350,9 @@ const RawDataView = ({
                           <h4 className="font-semibold text-gray-900">Detailed Second-by-Second Data</h4>
                           <span className="text-xs text-gray-500">{detailedData.length} readings</span>
                         </div>
-                        <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                        {/* Fixed-height (~10 rows) scrollable panel so long sessions don't
+                            stretch the expansion — Session Photos below stay visible. */}
+                        <div className="h-72 overflow-auto border border-gray-200 rounded-lg">
                           <table className="w-full text-xs">
                             <thead className="bg-gray-100 sticky top-0">
                               <tr>
