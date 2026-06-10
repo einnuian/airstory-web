@@ -1,0 +1,1815 @@
+openapi: 3.1.0
+info:
+  title: Airstory API
+  version: 1.0.0
+  description: >
+    REST API for the Airstory web app.
+    All protected endpoints require a JWT Bearer token obtained via /auth/login or /auth/register.
+
+servers:
+  - url: http://localhost:4000/api
+    description: Local development
+  - url: https://air-sensor-api.onrender.com/api
+    description: Production
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    AuthTokens:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            email:
+              type: string
+              format: email
+            fullName:
+              type: string
+            workspaceId:
+              type: string
+              format: uuid
+
+    UserProfile:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+          format: uuid
+        school_code:
+          type: string
+        instructor:
+          type: string
+        period:
+          type: string
+        group_code:
+          type: string
+        student_code:
+          type: string
+
+    JoinCode:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          example: ABC12
+        school_code:
+          type: string
+        instructor:
+          type: string
+        active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    ClassStructure:
+      type: object
+      properties:
+        periods:
+          type: array
+          items:
+            type: string
+          example: ["P1", "P2"]
+        groupsByPeriod:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          example:
+            P1: ["G1", "G2"]
+            P2: ["G1", "G2"]
+        periodCount:
+          type: integer
+        groupCount:
+          type: integer
+
+    WorkspaceMember:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [owner, teacher, student]
+        school_code:
+          type: string
+        instructor:
+          type: string
+        period:
+          type: string
+        group_code:
+          type: string
+        student_code:
+          type: string
+
+    Session:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        workspace_id:
+          type: string
+          format: uuid
+        created_by:
+          type: string
+          format: uuid
+        session_code:
+          type: string
+        name:
+          type: string
+        notes:
+          type: string
+        location_name:
+          type: string
+        school_code:
+          type: string
+        instructor:
+          type: string
+        period:
+          type: string
+        group_code:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        ended_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    MeasurementEdit:
+      type: object
+      properties:
+        editedValue:
+          type: number
+        originalValue:
+          type: number
+        editedByUserId:
+          type: string
+          format: uuid
+        editNote:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    Measurement:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        workspace_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        captured_at:
+          type: string
+          format: date-time
+        latitude:
+          type: number
+          nullable: true
+        longitude:
+          type: number
+          nullable: true
+        indoor_outdoor:
+          type: string
+          enum: [INDOOR, OUTDOOR]
+          nullable: true
+        pm25:
+          type: number
+        co:
+          type: number
+        temp:
+          type: number
+        humidity:
+          type: number
+        created_at:
+          type: string
+          format: date-time
+        session_code:
+          type: string
+        session_name:
+          type: string
+        session_notes:
+          type: string
+        location_name:
+          type: string
+        school_code:
+          type: string
+        instructor:
+          type: string
+        period:
+          type: string
+        group_code:
+          type: string
+        edits:
+          type: object
+          description: Map of field name to the most recent edit for that field
+          additionalProperties:
+            $ref: '#/components/schemas/MeasurementEdit'
+
+    EditRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        workspace_id:
+          type: string
+          format: uuid
+        measurement_id:
+          type: string
+          format: uuid
+        edited_by_user_id:
+          type: string
+          format: uuid
+        field_name:
+          type: string
+          enum: [pm25, co, temp, humidity]
+        original_value:
+          type: number
+        edited_value:
+          type: number
+        edit_note:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    StatSummary:
+      type: object
+      properties:
+        mean:
+          type: number
+          nullable: true
+        min:
+          type: number
+          nullable: true
+        max:
+          type: number
+          nullable: true
+        median:
+          type: number
+          nullable: true
+        stddev:
+          type: number
+          nullable: true
+        sample_count:
+          type: integer
+
+    HeatmapPoint:
+      type: object
+      properties:
+        latitude:
+          type: number
+          description: Rounded to 4 decimal places
+        longitude:
+          type: number
+          description: Rounded to 4 decimal places
+        value:
+          type: number
+          description: Average metric value at this location
+        point_count:
+          type: integer
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        details:
+          type: string
+
+paths:
+
+  # ── Health ────────────────────────────────────────────────────────────────
+
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  environment:
+                    type: string
+                    enum: [development, production]
+
+  # ── Auth ──────────────────────────────────────────────────────────────────
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, fullName]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 8
+                fullName:
+                  type: string
+                  minLength: 2
+                workspaceName:
+                  type: string
+                  minLength: 2
+                  default: Default Workspace
+                role:
+                  type: string
+                  enum: [student, teacher]
+                  default: student
+                schoolCode:
+                  type: string
+                  maxLength: 64
+                instructor:
+                  type: string
+                  maxLength: 160
+                period:
+                  type: string
+                  maxLength: 16
+                groupCode:
+                  type: string
+                  maxLength: 16
+                studentCode:
+                  type: string
+                joinWorkspaceId:
+                  type: string
+                  format: uuid
+                  description: UUID of the workspace to join (required for students)
+                joinCode:
+                  type: string
+                  minLength: 5
+                  maxLength: 5
+                  description: 5-character alphanumeric join code (required for students)
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokens'
+        '400':
+          description: Validation error (e.g. student requires join code, invalid period/group)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in with email and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokens'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/phg-session:
+    post:
+      tags: [Auth]
+      summary: Open a passwordless PHG shared student session
+      description: >
+        Issues a JWT for the shared `phg-students` backend account without
+        requiring credentials. Used by the PHG static site.
+      security: []
+      responses:
+        '200':
+          description: Session tokens for the shared PHG account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokens'
+        '503':
+          description: PHG shared account not configured or has no workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh an access token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: New access token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: string
+        '400':
+          description: refreshToken is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Refresh token invalid or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Log out and invalidate refresh token
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '204':
+          description: Logged out successfully
+
+  /auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Change the authenticated user's password
+      description: Invalidates all existing refresh tokens on success.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, newPassword]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: Must match the signed-in user's email
+                newPassword:
+                  type: string
+                  minLength: 8
+      responses:
+        '204':
+          description: Password changed
+        '403':
+          description: Email does not match signed-in account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get the authenticated user's info, memberships, and profile
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      email:
+                        type: string
+                        format: email
+                      full_name:
+                        type: string
+                  memberships:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        workspace_id:
+                          type: string
+                          format: uuid
+                        role:
+                          type: string
+                          enum: [owner, teacher, student]
+                  profile:
+                    $ref: '#/components/schemas/UserProfile'
+
+  /auth/me/profile:
+    patch:
+      tags: [Auth]
+      summary: Update the authenticated user's profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                schoolCode:
+                  type: string
+                  maxLength: 64
+                instructor:
+                  type: string
+                  maxLength: 160
+                period:
+                  type: string
+                  maxLength: 16
+                groupCode:
+                  type: string
+                  maxLength: 16
+      responses:
+        '200':
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile:
+                    $ref: '#/components/schemas/UserProfile'
+        '404':
+          description: Profile not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/join-code/{code}/config:
+    get:
+      tags: [Auth]
+      summary: Get workspace config from a join code
+      security: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 5
+            maxLength: 5
+      responses:
+        '200':
+          description: Workspace configuration for this join code
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workspaceId:
+                    type: string
+                    format: uuid
+                  schoolCode:
+                    type: string
+                  instructor:
+                    type: string
+                  periods:
+                    type: array
+                    items:
+                      type: string
+                    example: ["P1", "P2"]
+                  groupsByPeriod:
+                    type: object
+                    additionalProperties:
+                      type: array
+                      items:
+                        type: string
+                  periodCount:
+                    type: integer
+                  groupCount:
+                    type: integer
+        '404':
+          description: Invalid or inactive join code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/workspaces/{workspaceId}/roster:
+    get:
+      tags: [Auth]
+      summary: Get all members of a workspace
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Workspace member list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  members:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WorkspaceMember'
+        '403':
+          description: Not a workspace member
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/workspaces/{workspaceId}/join-codes:
+    get:
+      tags: [Auth]
+      summary: List all join codes for a workspace
+      description: Requires owner or teacher role.
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Join code list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  joinCodes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/JoinCode'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      tags: [Auth]
+      summary: Create a join code for a workspace
+      description: Requires owner or teacher role.
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code:
+                  type: string
+                  minLength: 5
+                  maxLength: 5
+                  description: 5 alphanumeric characters, stored as uppercase
+                schoolCode:
+                  type: string
+                  default: ''
+                instructor:
+                  type: string
+                  default: ''
+                active:
+                  type: boolean
+                  default: true
+      responses:
+        '201':
+          description: Join code created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  joinCode:
+                    $ref: '#/components/schemas/JoinCode'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Join code already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/workspaces/{workspaceId}/join-codes/{codeId}:
+    patch:
+      tags: [Auth]
+      summary: Activate or deactivate a join code
+      description: Requires owner or teacher role.
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: codeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [active]
+              properties:
+                active:
+                  type: boolean
+      responses:
+        '200':
+          description: Updated join code
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  joinCode:
+                    $ref: '#/components/schemas/JoinCode'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Join code not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/workspaces/{workspaceId}/class-structure:
+    get:
+      tags: [Auth]
+      summary: Get the period/group structure of a workspace
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Class structure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassStructure'
+
+    patch:
+      tags: [Auth]
+      summary: Update the period/group counts for a workspace
+      description: Requires owner or teacher role.
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [periodCount, groupCount]
+              properties:
+                periodCount:
+                  type: integer
+                  minimum: 1
+                  maximum: 12
+                groupCount:
+                  type: integer
+                  minimum: 1
+                  maximum: 12
+      responses:
+        '200':
+          description: Updated class structure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassStructure'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/workspaces/{workspaceId}/users/{userId}/reset-password:
+    post:
+      tags: [Auth]
+      summary: Reset a student's password (teacher action)
+      description: Requires owner or teacher role. Invalidates the student's refresh tokens.
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newPassword]
+              properties:
+                newPassword:
+                  type: string
+                  minLength: 8
+      responses:
+        '204':
+          description: Password reset
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Student not found in this workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/workspaces/{workspaceId}/users/{userId}/placement:
+    patch:
+      tags: [Auth]
+      summary: Move a student to a different period/group
+      description: Requires owner or teacher role.
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [period, groupCode]
+              properties:
+                period:
+                  type: string
+                  minLength: 1
+                groupCode:
+                  type: string
+                  minLength: 1
+      responses:
+        '200':
+          description: Updated placement
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile:
+                    type: object
+                    properties:
+                      user_id:
+                        type: string
+                        format: uuid
+                      workspace_id:
+                        type: string
+                        format: uuid
+                      period:
+                        type: string
+                      group_code:
+                        type: string
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Student or profile not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/workspaces/{workspaceId}/users/{userId}:
+    delete:
+      tags: [Auth]
+      summary: Remove a student from a workspace
+      description: Requires owner or teacher role. Deletes the student's profile in this workspace.
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Student removed
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Student not found in this workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Sessions ──────────────────────────────────────────────────────────────
+
+  /workspaces/{workspaceId}/sessions:
+    get:
+      tags: [Sessions]
+      summary: List all sessions in a workspace
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Session list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Session'
+
+    post:
+      tags: [Sessions]
+      summary: Create a new session
+      description: Requires owner or teacher role.
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionCode, name]
+              properties:
+                sessionCode:
+                  type: string
+                  minLength: 1
+                name:
+                  type: string
+                  minLength: 1
+                notes:
+                  type: string
+                  default: ''
+                locationName:
+                  type: string
+                  default: ''
+                schoolCode:
+                  type: string
+                  default: ''
+                instructor:
+                  type: string
+                  default: ''
+                period:
+                  type: string
+                  default: ''
+                groupCode:
+                  type: string
+                  default: ''
+                startedAt:
+                  type: string
+                  format: date-time
+                endedAt:
+                  type: string
+                  format: date-time
+      responses:
+        '201':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session:
+                    $ref: '#/components/schemas/Session'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /workspaces/{workspaceId}/sessions/{sessionId}:
+    delete:
+      tags: [Sessions]
+      summary: Delete a session and all its measurements
+      description: Requires owner or teacher role.
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Session deleted
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Measurements ──────────────────────────────────────────────────────────
+
+  /workspaces/{workspaceId}/measurements:
+    get:
+      tags: [Measurements]
+      summary: List measurements in a workspace
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Include measurements on or after this timestamp
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Include measurements on or before this timestamp
+        - name: sessionId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: schoolCode
+          in: query
+          schema:
+            type: string
+        - name: instructor
+          in: query
+          schema:
+            type: string
+        - name: groupCode
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 200
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Measurement list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  measurements:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Measurement'
+
+    post:
+      tags: [Measurements]
+      summary: Create a single measurement
+      description: Requires owner or teacher role.
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId, capturedAt, pm25, co, temp, humidity]
+              properties:
+                sessionId:
+                  type: string
+                  format: uuid
+                capturedAt:
+                  type: string
+                  format: date-time
+                latitude:
+                  type: number
+                  nullable: true
+                longitude:
+                  type: number
+                  nullable: true
+                indoorOutdoor:
+                  type: string
+                  enum: [INDOOR, OUTDOOR]
+                  nullable: true
+                pm25:
+                  type: number
+                co:
+                  type: number
+                temp:
+                  type: number
+                humidity:
+                  type: number
+      responses:
+        '201':
+          description: Measurement created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  measurement:
+                    $ref: '#/components/schemas/Measurement'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      tags: [Measurements]
+      summary: Delete all measurements, sessions, and edits in a workspace
+      description: >
+        Destructive — clears the entire workspace dataset.
+        Requires owner or teacher role.
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Workspace data cleared
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /workspaces/{workspaceId}/measurements/{measurementId}:
+    patch:
+      tags: [Measurements]
+      summary: Update sensor values on a measurement
+      description: Requires owner or teacher role.
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: measurementId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pm25:
+                  type: number
+                co:
+                  type: number
+                temp:
+                  type: number
+                humidity:
+                  type: number
+                indoorOutdoor:
+                  type: string
+                  enum: [INDOOR, OUTDOOR]
+      responses:
+        '200':
+          description: Updated measurement
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  measurement:
+                    $ref: '#/components/schemas/Measurement'
+        '400':
+          description: No fields to update
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Measurement not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /workspaces/{workspaceId}/measurements/{measurementId}/edits:
+    post:
+      tags: [Measurements]
+      summary: Record a corrected value for a measurement field
+      description: Available to all workspace roles (owner, teacher, student).
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: measurementId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fieldName, editedValue]
+              properties:
+                fieldName:
+                  type: string
+                  enum: [pm25, co, temp, humidity]
+                editedValue:
+                  type: number
+                editNote:
+                  type: string
+                  maxLength: 300
+                  default: ''
+      responses:
+        '201':
+          description: Edit recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  edit:
+                    $ref: '#/components/schemas/EditRecord'
+        '404':
+          description: Measurement not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /workspaces/{workspaceId}/import/csv:
+    post:
+      tags: [Measurements]
+      summary: Bulk import measurements from a parsed CSV
+      description: >
+        Accepts a JSON array of pre-parsed CSV rows. Creates sessions automatically
+        based on `sessionCode` values found in the rows.
+        Available to all workspace roles.
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rows]
+              properties:
+                rows:
+                  type: array
+                  minItems: 1
+                  maxItems: 10000
+                  items:
+                    type: object
+                    required: [capturedAt, pm25, co, temp, humidity]
+                    properties:
+                      capturedAt:
+                        type: string
+                        format: date-time
+                      sessionCode:
+                        type: string
+                        default: SESSION
+                      sessionName:
+                        type: string
+                        default: Imported Session
+                      sessionNotes:
+                        type: string
+                        default: ''
+                      location:
+                        type: string
+                        default: Imported Location
+                      school:
+                        type: string
+                        default: ''
+                      instructor:
+                        type: string
+                        default: ''
+                      period:
+                        type: string
+                        default: ''
+                      group:
+                        type: string
+                        default: ''
+                      indoorOutdoor:
+                        type: string
+                        enum: [INDOOR, OUTDOOR, IN, INSIDE, OUT]
+                        default: OUTDOOR
+                      latitude:
+                        type: number
+                        nullable: true
+                      longitude:
+                        type: number
+                        nullable: true
+                      pm25:
+                        type: number
+                      co:
+                        type: number
+                      temp:
+                        type: number
+                      humidity:
+                        type: number
+      responses:
+        '200':
+          description: Import complete
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  importedCount:
+                    type: integer
+
+  # ── Analytics ─────────────────────────────────────────────────────────────
+
+  /workspaces/{workspaceId}/analytics/summary:
+    get:
+      tags: [Analytics]
+      summary: Get aggregate statistics for a metric in a workspace
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: metric
+          in: query
+          schema:
+            type: string
+            enum: [pm25, co, temp, humidity]
+            default: pm25
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Summary statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  metric:
+                    type: string
+                  summary:
+                    $ref: '#/components/schemas/StatSummary'
+        '400':
+          description: Invalid metric
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /workspaces/{workspaceId}/heatmap:
+    get:
+      tags: [Analytics]
+      summary: Get aggregated heatmap points for a workspace
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: metric
+          in: query
+          schema:
+            type: string
+            enum: [pm25, co, temp, humidity]
+            default: pm25
+      responses:
+        '200':
+          description: Heatmap data points
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  metric:
+                    type: string
+                  points:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/HeatmapPoint'
+        '400':
+          description: Invalid metric
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /workspaces/{workspaceId}/export/measurements.csv:
+    get:
+      tags: [Analytics]
+      summary: Export workspace measurements as a CSV file
+      description: Returns up to 5000 measurements, most recent first.
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: CSV file download
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+                example: attachment; filename=measurements.csv
+          content:
+            text/csv:
+              schema:
+                type: string
+                description: >
+                  Columns: id, captured_at, pm25, co, temp, humidity,
+                  latitude, longitude, indoor_outdoor, session_code,
+                  session_name, school_code, instructor, period, group_code
+
+  /analytics/openaq/daily:
+    get:
+      tags: [Analytics]
+      summary: Fetch daily reference air quality data from OpenAQ
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          schema:
+            type: number
+        - name: lng
+          in: query
+          required: true
+          schema:
+            type: number
+        - name: date_from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+            example: '2024-01-01'
+        - name: date_to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+            example: '2024-01-31'
+        - name: metric
+          in: query
+          schema:
+            type: string
+            default: pm25
+      responses:
+        '200':
+          description: OpenAQ daily measurements (variable structure)
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: Invalid coordinates or missing dates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: OpenAQ API key not configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /analytics/openaq/heatmap:
+    get:
+      tags: [Analytics]
+      summary: Fetch nearby OpenAQ sensor locations for a heatmap overlay
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          schema:
+            type: number
+        - name: lng
+          in: query
+          required: true
+          schema:
+            type: number
+        - name: metric
+          in: query
+          schema:
+            type: string
+            default: pm25
+        - name: radius
+          in: query
+          schema:
+            type: number
+            default: 15000
+            description: Search radius in meters
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 25
+            description: Maximum number of sensor locations to return
+      responses:
+        '200':
+          description: OpenAQ sensor locations (variable structure)
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: Invalid coordinates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: OpenAQ API key not configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Sheets ────────────────────────────────────────────────────────────────
+
+  /workspaces/{workspaceId}/sheets/export:
+    post:
+      tags: [Sheets]
+      summary: Export workspace data to Google Sheets
+      description: >
+        Exports all sessions and up to 5000 measurements to the configured
+        Google Sheet. Requires GOOGLE_SHEET_ID, GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        and GOOGLE_PRIVATE_KEY environment variables on the server.
+        Requires owner or teacher role.
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Export complete
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  exported:
+                    type: object
+                    properties:
+                      sessions:
+                        type: integer
+                      measurements:
+                        type: integer
+        '403':
+          description: Insufficient role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Google Sheets credentials not configured or API error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+tags:
+  - name: Health
+    description: Service health check
+  - name: Auth
+    description: User authentication, profiles, workspace membership, and join codes
+  - name: Sessions
+    description: Data collection sessions within a workspace
+  - name: Measurements
+    description: Individual sensor readings, bulk import, and edit history
+  - name: Analytics
+    description: Aggregated statistics, heatmap data, CSV export, and OpenAQ reference data
+  - name: Sheets
+    description: Google Sheets export integration
