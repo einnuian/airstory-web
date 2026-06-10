@@ -937,13 +937,13 @@ const RawDataView = ({
                     setSelectedMetric('pm25');
                     handleSort('pm25');
                   }}
-                  className={`px-4 py-4 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors ${appliedMetrics.pm25 ? '' : 'hidden'} ${
+                  className={`w-32 px-4 py-4 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors ${appliedMetrics.pm25 ? '' : 'hidden'} ${
                     selectedMetric === 'pm25' ? `${theme.bg} text-white hover:opacity-90` : 'text-gray-700'
                   }`}
                   title="Particulate matter 2.5"
                 >
                   <div className="flex items-center gap-2">
-                    PM 2.5 <span className="normal-case">(µg/m³)</span>
+                    <span className="leading-tight">PM 2.5 <span className="normal-case">(µg/m³)</span></span>
                     <SortIcon columnKey="pm25" />
                   </div>
                 </th>
@@ -952,13 +952,13 @@ const RawDataView = ({
                     setSelectedMetric('co');
                     handleSort('co');
                   }}
-                  className={`px-4 py-4 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors ${appliedMetrics.co ? '' : 'hidden'} ${
+                  className={`w-32 px-4 py-4 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors ${appliedMetrics.co ? '' : 'hidden'} ${
                     selectedMetric === 'co' ? `${theme.bg} text-white hover:opacity-90` : 'text-gray-700'
                   }`}
                   title="Carbon monoxide"
                 >
                   <div className="flex items-center gap-2">
-                    CO <span className="normal-case">(ppm)</span>
+                    <span className="leading-tight">CO <span className="normal-case">(ppm)</span></span>
                     <SortIcon columnKey="co" />
                   </div>
                 </th>
@@ -967,13 +967,13 @@ const RawDataView = ({
                     setSelectedMetric('temp');
                     handleSort('temp');
                   }}
-                  className={`px-4 py-4 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors ${appliedMetrics.temp ? '' : 'hidden'} ${
+                  className={`w-32 px-4 py-4 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors ${appliedMetrics.temp ? '' : 'hidden'} ${
                     selectedMetric === 'temp' ? `${theme.bg} text-white hover:opacity-90` : 'text-gray-700'
                   }`}
                   title="Temperature"
                 >
                   <div className="flex items-center gap-2">
-                    TEMP (°C)
+                    <span className="leading-tight">TEMP (°C)</span>
                     <SortIcon columnKey="temp" />
                   </div>
                 </th>
@@ -982,13 +982,13 @@ const RawDataView = ({
                     setSelectedMetric('humidity');
                     handleSort('humidity');
                   }}
-                  className={`px-4 py-4 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors ${appliedMetrics.humidity ? '' : 'hidden'} ${
+                  className={`w-32 px-4 py-4 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors ${appliedMetrics.humidity ? '' : 'hidden'} ${
                     selectedMetric === 'humidity' ? `${theme.bg} text-white hover:opacity-90` : 'text-gray-700'
                   }`}
                   title="Humidity"
                 >
                   <div className="flex items-center gap-2">
-                    HUM (%)
+                    <span className="leading-tight">HUM (%)</span>
                     <SortIcon columnKey="humidity" />
                   </div>
                 </th>
@@ -1006,25 +1006,27 @@ const RawDataView = ({
                 </th>
                 <th
                   onClick={() => handleSort('latitude')}
-                  className="px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  className="w-px whitespace-nowrap px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  title="Latitude"
                 >
                   <div className="flex items-center gap-2">
-                    Latitude
+                    LAT
                     <SortIcon columnKey="latitude" />
                   </div>
                 </th>
                 <th
                   onClick={() => handleSort('longitude')}
-                  className="px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  className="w-px whitespace-nowrap px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  title="Longitude"
                 >
                   <div className="flex items-center gap-2">
-                    Longitude
+                    LONG
                     <SortIcon columnKey="longitude" />
                   </div>
                 </th>
                 <th
                   onClick={() => handleSort('sessionName')}
-                  className="px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  className="w-48 px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                 >
                   <div className="flex items-center gap-2">
                     Session Name
@@ -1061,7 +1063,7 @@ const RawDataView = ({
                 <th className="px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                   Notes
                 </th>
-                <th className="px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                   Visibility
                 </th>
               </tr>
@@ -1332,7 +1334,7 @@ const RawDataView = ({
                   </td>
 
                   {/* Visibility (read-only pill) */}
-                  <td className="px-4 py-3 text-sm">
+                  <td className="px-4 py-3 text-sm whitespace-nowrap">
                     {VISIBILITY_META[row.visibility] ? (
                       <span className={`px-2 py-1 text-xs font-semibold rounded-full ${VISIBILITY_META[row.visibility].cls}`}>
                         {VISIBILITY_META[row.visibility].label}
