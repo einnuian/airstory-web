@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { Download, Filter, Search, Calendar, ChevronDown, TrendingUp, TrendingDown, ChevronRight, Image as ImageIcon, X, Upload, Share2 } from 'lucide-react';
+import { Download, Filter, Search, Calendar, ChevronDown, TrendingUp, TrendingDown, ChevronRight, Image as ImageIcon, X, Upload, Share2, Lock } from 'lucide-react';
 import { addMeasurementEdit, clearWorkspaceMeasurements, getMeasurements, importCsvMeasurements } from '../api/data';
 import {
   clearImportedMeasurements,
@@ -44,11 +44,12 @@ const ck = (instructor, period) => `${instructor}|${period}`;
 // TODO(backend): replace mock `visibility` with the real `visibility` field once
 // GET /workspaces/:id/measurements returns it (see mockMeasurements.js).
 const VISIBILITY_META = {
-  public: { label: 'Public', cls: 'bg-green-100 text-green-800' },
-  school: { label: 'School only', cls: 'bg-blue-100 text-blue-800' },
-  class: { label: 'Class only', cls: 'bg-purple-100 text-purple-800' },
-  me: { label: 'Me only', cls: 'bg-gray-200 text-gray-700' },
+  public: { label: 'Public', cls: 'bg-green-100 text-green-800', dot: 'bg-green-500' },
+  school: { label: 'School only', cls: 'bg-blue-100 text-blue-800', dot: 'bg-blue-500' },
+  class: { label: 'Class only', cls: 'bg-purple-100 text-purple-800', dot: 'bg-purple-500' },
+  me: { label: 'Me only', cls: 'bg-gray-200 text-gray-700', dot: 'bg-gray-500' },
 };
+const VISIBILITY_OPTIONS = ['public', 'school', 'class', 'me'];
 
 const INDOOR_OUTDOOR_OPTIONS = ['INDOOR', 'OUTDOOR'];
 
@@ -126,6 +127,9 @@ const RawDataView = ({
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   // Shared confirmation for any destructive action: { variant, title, message, confirmLabel, onConfirm } | null
   const [confirmState, setConfirmState] = useState(null);
+  const [visibilityMenu, setVisibilityMenu] = useState(null); // rowId whose visibility menu is open
+  // Empty-by-default: no sessions shown until the student engages (picks a scope tab/selector or applies filters).
+  const [hasEngaged, setHasEngaged] = useState(false);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [editingNotes, setEditingNotes] = useState(null);
@@ -231,6 +235,7 @@ const RawDataView = ({
       schoolRows.filter((r) => ck(r.instructor, r.period) === key).map((r) => r.group).filter(Boolean)
     )].sort();
     setScopeGroup(ownGroup || groups[0] || '');
+    setHasEngaged(true);
   };
   
 
@@ -284,12 +289,15 @@ const RawDataView = ({
     });
   }
 
+  // Empty-by-default: only show sessions once the student has engaged.
+  const viewRows = hasEngaged ? filteredData : [];
+
   // Pagination
-  const totalPages = Math.max(1, Math.ceil(filteredData.length / itemsPerPage));
+  const totalPages = Math.max(1, Math.ceil(viewRows.length / itemsPerPage));
   React.useEffect(() => {
     setCurrentPage((prev) => Math.min(prev, totalPages));
   }, [totalPages]);
-  const paginatedData = filteredData.slice(
+  const paginatedData = viewRows.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
@@ -308,6 +316,7 @@ const RawDataView = ({
     setAppliedMetrics(metricsDraft);
     setOpenChip(null);
     setCurrentPage(1);
+    setHasEngaged(true);
   };
 
   const clearFilters = () => {
@@ -321,12 +330,13 @@ const RawDataView = ({
     setAppliedMetrics(ALL_METRICS_ON);
     setOpenChip(null);
     setCurrentPage(1);
+    setHasEngaged(false); // back to the empty default state
   };
 
-  // Build the CSV for the CURRENT FILTERED VIEW (filteredData), full column set.
+  // Build the CSV for the CURRENT VIEW (the visible sessions), full column set.
   const buildExportCsv = () => {
     const rows = [];
-    filteredData.forEach((row) => {
+    viewRows.forEach((row) => {
       const detailed = generateDetailedData(row);
       detailed.forEach((second) => {
         const indoorOutdoorLabel =
@@ -515,6 +525,15 @@ const RawDataView = ({
     }
   };
 
+  // TODO(backend): persist via a session visibility-update endpoint (e.g.
+  // PATCH /workspaces/:id/sessions/:sessionId { visibility }) with SERVER-SIDE owner
+  // authorization — only the session owner may change visibility. For now this updates
+  // local mock state only; ownership is mocked as the dev user's own sessions.
+  const handleVisibilityChange = (rowId, visibility) => {
+    setRawData((prev) => prev.map((r) => (r.id === rowId ? { ...r, visibility } : r)));
+    setVisibilityMenu(null);
+  };
+
   const markEdited = (rowIds, field) => {
     setEditedCells(prev => {
       const updated = { ...prev };
@@ -529,12 +548,14 @@ const RawDataView = ({
   };
 
   const handleSessionNotesEdit = (rowId, newNotes) => {
-    setRawData(prev => prev.map(row => 
-      row.id === rowId 
-        ? { ...row, sessionNotes: newNotes }
-        : row
-    ));
-    markEdited([rowId], 'sessionNotes');
+    const currentRow = rawData.find((r) => r.id === rowId);
+    const changed = !currentRow || (currentRow.sessionNotes || '') !== (newNotes || '');
+    if (changed) {
+      setRawData(prev => prev.map(row =>
+        row.id === rowId ? { ...row, sessionNotes: newNotes } : row
+      ));
+      markEdited([rowId], 'sessionNotes');
+    }
     setEditingNotes(null);
   };
 
@@ -556,24 +577,30 @@ const RawDataView = ({
   const handleFieldEdit = (rowId, field, value) => {
     const formatter = FIELD_FORMATTERS[field] || ((v) => v);
     const formattedValue = formatter(value);
+    const currentRow = rawData.find((r) => r.id === rowId);
+    const changed = !currentRow || String(currentRow[field]) !== String(formattedValue);
 
-    setRawData(prev =>
-      prev.map(row =>
-        row.id === rowId
-          ? { ...row, [field]: formattedValue }
-          : row
-      )
-    );
+    // Only flag as edited / persist when the value actually changed from its current
+    // value — a no-op edit (click a cell, blur without changing) must not show a marker.
+    if (changed) {
+      setRawData(prev =>
+        prev.map(row =>
+          row.id === rowId
+            ? { ...row, [field]: formattedValue }
+            : row
+        )
+      );
 
-    markEdited([rowId], field);
-    if (workspaceId && ['pm25', 'co', 'temp', 'humidity'].includes(field)) {
-      addMeasurementEdit(workspaceId, rowId, {
-        fieldName: field,
-        editedValue: Number(formattedValue),
-        editNote: 'Dashboard manual correction',
-      }).catch(() => {
-        // Keep UI responsive even if backend edit write fails.
-      });
+      markEdited([rowId], field);
+      if (workspaceId && ['pm25', 'co', 'temp', 'humidity'].includes(field)) {
+        addMeasurementEdit(workspaceId, rowId, {
+          fieldName: field,
+          editedValue: Number(formattedValue),
+          editNote: 'Dashboard manual correction',
+        }).catch(() => {
+          // Keep UI responsive even if backend edit write fails.
+        });
+      }
     }
 
     setEditingCell({ rowId: null, field: null });
@@ -642,13 +669,6 @@ const RawDataView = ({
           </p>
           {loadingBackend && <p className="text-xs text-gray-500 mt-1">Loading backend data...</p>}
           {importError && <p className="text-xs text-red-600 mt-1">{importError}</p>}
-          {rawData.length > 0 && filteredData.length === 0 && (
-            <p className="text-xs text-amber-700 mt-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-              {rawData.length} row(s) loaded but none match the current filters. Try &quot;Reset Hierarchy&quot;
-              below, clear Search / Session / Date filters, or note CSV rows with blank School/Period/Group now
-              show under any selection.
-            </p>
-          )}
         </div>
         <div className="flex flex-col items-end gap-2">
           {/* Read-only identity: your School · Class (teacher · period) · Group */}
@@ -722,7 +742,7 @@ const RawDataView = ({
             ].map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setScopeTab(tab.id)}
+                onClick={() => { setScopeTab(tab.id); setHasEngaged(true); }}
                 className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
                   scopeTab === tab.id ? 'bg-blue-600 text-white shadow' : 'text-gray-600 hover:bg-gray-100'
                 }`}
@@ -737,7 +757,7 @@ const RawDataView = ({
             <div className="flex items-center gap-2">
               <select
                 value={scopeGroup}
-                onChange={(e) => setScopeGroup(e.target.value)}
+                onChange={(e) => { setScopeGroup(e.target.value); setHasEngaged(true); }}
                 className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 {groupsForSelectedClass.map((g) => (
@@ -891,25 +911,31 @@ const RawDataView = ({
       <div className="flex items-center justify-between text-sm px-1">
         <p className="text-gray-600">
           Showing <span className="font-semibold text-gray-900">{paginatedData.length}</span> of{' '}
-          <span className="font-semibold text-gray-900">{filteredData.length}</span> records
+          <span className="font-semibold text-gray-900">{viewRows.length}</span> sessions
         </p>
       </div>
 
       {/* Data Table */}
       <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
-        {filteredData.length === 0 && (
+        {viewRows.length === 0 && (
           <div className="px-6 py-16 text-center border-b border-gray-200">
-            {rawData.length > 0 ? (
+            {!hasEngaged ? (
               <>
-                <p className="text-lg font-semibold text-gray-800">No rows match your filters</p>
+                <p className="text-lg font-semibold text-gray-800">Select a scope or filters to view sessions</p>
                 <p className="text-sm text-gray-500 mt-2">
-                  Data is loaded ({rawData.length} chunk{rawData.length === 1 ? "" : "s"}). Use Reset Hierarchy / Clear
-                  Filters, or import matched your group in the CSV (e.g. G4 vs G1 in Team Data).
+                  Pick a scope tab (Group / Class / School) or apply filters above to load sessions.
+                </p>
+              </>
+            ) : rawData.length > 0 ? (
+              <>
+                <p className="text-lg font-semibold text-gray-800">No sessions match your filters</p>
+                <p className="text-sm text-gray-500 mt-2">
+                  Adjust your scope or filters, or use Clear filters.
                 </p>
               </>
             ) : (
               <>
-                <p className="text-lg font-semibold text-gray-800">NO DATA IMPORTED</p>
+                <p className="text-lg font-semibold text-gray-800">No data imported</p>
                 <p className="text-sm text-gray-500 mt-2">
                   Import a CSV from your app export, or connect backend data.
                 </p>
@@ -1026,7 +1052,7 @@ const RawDataView = ({
                 </th>
                 <th
                   onClick={() => handleSort('sessionName')}
-                  className="w-48 px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  className="w-64 px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                 >
                   <div className="flex items-center gap-2">
                     Session Name
@@ -1060,9 +1086,6 @@ const RawDataView = ({
                     <SortIcon columnKey="group" />
                   </div>
                 </th>
-                <th className="px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
-                  Notes
-                </th>
                 <th className="whitespace-nowrap px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                   Visibility
                 </th>
@@ -1074,7 +1097,16 @@ const RawDataView = ({
                 const detailedData = isExpanded ? generateDetailedData(row) : [];
                 return (
                   <React.Fragment key={row.id}>
-                    <tr className={`hover:bg-gray-50 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
+                    <tr
+                      onClick={(e) => {
+                        // Whole-row toggles expansion, except when clicking an interactive
+                        // element (chevron, editable cells, coordinate links, visibility pill/menu).
+                        if (!e.target.closest('button, a, input, select, textarea')) {
+                          toggleRowExpansion(row.id);
+                        }
+                      }}
+                      className={`cursor-pointer hover:bg-gray-50 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}
+                    >
                       <td className="px-4 py-3">
                         <button
                           onClick={() => toggleRowExpansion(row.id)}
@@ -1297,56 +1329,54 @@ const RawDataView = ({
                     <span className="font-medium text-gray-900">{row.group}</span>
                   </td>
 
-                  {/* Notes */}
-                  <td className="px-4 py-3 text-sm max-w-xs">
-                    {editingNotes === row.id ? (
-                      <textarea
-                        defaultValue={row.sessionNotes}
-                        autoFocus
-                        rows="2"
-                        onBlur={(e) => handleSessionNotesEdit(row.id, e.target.value)}
-                        placeholder="Add notes about this measurement..."
-                        className="w-full px-2 py-1 text-sm border border-blue-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                      />
-                    ) : (
-                      <button
-                        onClick={() => setEditingNotes(row.id)}
-                        className="text-left w-full text-gray-600 hover:text-blue-600 transition-colors group"
-                        title="Click to add/edit notes"
-                      >
-                        {row.sessionNotes ? (
-                          <span className="flex items-center gap-2">
-                            <span className="truncate">
-                              {row.sessionNotes}
-                            </span>
-                            <span className="text-xs text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">✏️</span>
-                            {isEdited(row.id, 'sessionNotes') && (
-                              <span className="text-xs text-orange-600 font-semibold">*</span>
-                            )}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400 italic opacity-0 group-hover:opacity-100 transition-opacity">
-                            Add notes...
-                          </span>
-                        )}
-                      </button>
-                    )}
-                  </td>
-
-                  {/* Visibility (read-only pill) */}
+                  {/* Visibility — editable by the session OWNER only */}
                   <td className="px-4 py-3 text-sm whitespace-nowrap">
-                    {VISIBILITY_META[row.visibility] ? (
-                      <span className={`px-2 py-1 text-xs font-semibold rounded-full ${VISIBILITY_META[row.visibility].cls}`}>
-                        {VISIBILITY_META[row.visibility].label}
-                      </span>
-                    ) : (
-                      <span className="text-gray-400">—</span>
-                    )}
+                    {(() => {
+                      const meta = VISIBILITY_META[row.visibility];
+                      if (!meta) return <span className="text-gray-400">—</span>;
+                      const isOwner = row.ownerCode === viewerIdentity.studentCode;
+                      if (!isOwner) {
+                        return (
+                          <span className="group inline-flex items-center gap-1" title="Only the session owner can change this">
+                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${meta.cls}`}>{meta.label}</span>
+                            <Lock className="w-3 h-3 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </span>
+                        );
+                      }
+                      return (
+                        <div className="relative inline-block">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setVisibilityMenu(visibilityMenu === row.id ? null : row.id); }}
+                            className={`px-2 py-1 text-xs font-semibold rounded-full ${meta.cls} hover:ring-2 hover:ring-offset-1 hover:ring-gray-300 transition`}
+                            title="Change who can see this session"
+                          >
+                            {meta.label}
+                          </button>
+                          {visibilityMenu === row.id && (
+                            <div
+                              className="absolute right-0 z-30 mt-1 w-36 bg-white border border-gray-200 rounded-lg shadow-lg p-1"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {VISIBILITY_OPTIONS.map((key) => (
+                                <button
+                                  key={key}
+                                  onClick={(e) => { e.stopPropagation(); handleVisibilityChange(row.id, key); }}
+                                  className={`flex items-center gap-2 w-full text-left px-2 py-1.5 text-xs rounded-md hover:bg-gray-50 ${row.visibility === key ? 'font-semibold text-gray-900' : 'text-gray-600'}`}
+                                >
+                                  <span className={`w-2 h-2 rounded-full ${VISIBILITY_META[key].dot}`} />
+                                  {VISIBILITY_META[key].label}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </td>
                 </tr>
                 {isExpanded && (
                   <tr>
-                    <td colSpan="16" className="px-4 py-4 bg-gray-50 border-t-2 border-gray-300">
+                    <td colSpan="15" className="px-4 py-4 bg-gray-50 border-t-2 border-gray-300">
                       <div className="space-y-4">
                         <div className="flex items-center justify-between mb-3">
                           <h4 className="font-semibold text-gray-900">Detailed Second-by-Second Data</h4>
@@ -1426,6 +1456,39 @@ const RawDataView = ({
                               </div>
                             )}
                           </div>
+                        </div>
+
+                        {/* Observation note (per-session), below Session Photos */}
+                        <div className="mt-4 pt-4 border-t border-gray-200">
+                          <h5 className="font-semibold text-gray-700 text-sm mb-2">Observation note</h5>
+                          {editingNotes === row.id ? (
+                            <textarea
+                              defaultValue={row.sessionNotes}
+                              autoFocus
+                              rows="2"
+                              onBlur={(e) => handleSessionNotesEdit(row.id, e.target.value)}
+                              placeholder="Add an observation note about this session..."
+                              className="w-full px-2 py-1 text-sm border border-blue-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                            />
+                          ) : (
+                            <button
+                              onClick={() => setEditingNotes(row.id)}
+                              className="text-left w-full text-sm text-gray-600 hover:text-blue-600 transition-colors group"
+                              title="Click to add or edit the observation note"
+                            >
+                              {row.sessionNotes ? (
+                                <span className="inline-flex items-center gap-2">
+                                  <span>{row.sessionNotes}</span>
+                                  <span className="text-xs text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">✏️</span>
+                                  {isEdited(row.id, 'sessionNotes') && (
+                                    <span className="text-xs text-orange-600 font-semibold">*</span>
+                                  )}
+                                </span>
+                              ) : (
+                                <span className="text-gray-400 italic">Add an observation note…</span>
+                              )}
+                            </button>
+                          )}
                         </div>
                       </div>
                     </td>
