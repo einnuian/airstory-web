@@ -21,3 +21,77 @@ GitHub: **Settings → Pages** — source **GitHub Actions** so the workflow in 
 **Vercel:** not required if you only use Pages. If `git push` still triggers Vercel builds, disconnect the project in Vercel (see **`docs/VERCEL.md` → “GitHub Pages만 쓸 때”**).
 
 **Render:** `render.yaml` Blueprint — API + Postgres. See `docs/DEPLOY_RENDER.md`.
+
+## Local Development
+
+### Prerequisites
+
+- Node.js
+- Docker (for the database)
+
+### 1. Start the database
+
+```bash
+docker compose up -d
+```
+
+This starts a PostgreSQL 16 container using the settings in `docker-compose.yml` (`air_sensor` database, user `postgres`, password `postgres`).
+
+### 2. Set up the backend
+
+```bash
+cd backend
+cp .env.example .env
+```
+
+Edit `.env` and set the two JWT secrets to any long random strings:
+
+```
+JWT_ACCESS_SECRET=<any-long-random-string>
+JWT_REFRESH_SECRET=<any-other-long-random-string>
+```
+
+Then install dependencies, run migrations, and seed the database:
+
+```bash
+npm install
+npm run db:migrate   # create tables
+npm run db:seed      # create teacher account + PHG01 workspace
+```
+
+Start the backend:
+
+```bash
+npm run dev          # runs on http://localhost:4000
+```
+
+### 3. Start the frontend
+
+In the repo root:
+
+```bash
+npm install
+npm start            # runs on http://localhost:3000
+```
+
+No `.env` file is needed for local dev — the frontend automatically points to `http://localhost:4000/api` when running on localhost. A `REACT_APP_GOOGLE_MAPS_API_KEY` is only required for the heat map view.
+
+### 4. Log in
+
+| Role | Email | Password |
+|---|---|---|
+| Teacher | `sikich@tamgu.com` | `sikich2026` |
+
+Open Manage Classes to generate a join code and create student accounts.
+
+### Useful commands
+
+| Command | Description |
+|---|---|
+| `docker compose up -d` | Start the database |
+| `docker compose stop` | Stop the database |
+| `docker compose down` | Stop the database (Switching branches/Done with project)|
+| `docker compose down -v` | Fresh database
+| `npm run db:migrate` | Apply schema migrations |
+| `npm run db:seed` | Reset PHG01 workspace + recreate teacher account |
+| `npm run db:upsert-teacher` | Recreate teacher account only (non-destructive) |
