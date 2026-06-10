@@ -5,72 +5,139 @@
  * is ready. Flip MOCK_DATA_ENABLED to false (or delete this file + its imports in
  * RawDataView.js) to return to live/imported data only.
  *
- * Rows are authored in the GET /measurements API shape from docs/API_REFERENCE.md
- * (snake_case), then mapped to display rows via the shared mapper so they render
- * exactly like real data.
+ * SHAPE: matches reality — the sensor records ~one reading per second, so a SESSION
+ * is a container of many per-second readings. Each entry below is ONE session; the
+ * generator expands it into a realistic per-second time series (gradual drift around
+ * a baseline, with an optional mid-session event). The table lists one row per
+ * session showing the session MEAN per metric; the expanded row + CSV export draw
+ * from the per-second `detailedData`.
  *
- * Data model: a "class" is a (teacher, period) pair — period never stands alone.
- * The mock student belongs to ONE class-period (Ms. Rivera · P3, group G1).
+ * We build session display rows directly here (NOT via workspaceMeasurementsToDisplayRows,
+ * which buckets by minute) so each session stays a single row.
  *
- * TODO(backend): `visibility` and `owner_student_code` are NOT yet returned by
- * GET /workspaces/:id/measurements. Visibility is ultimately set on the phone
- * before upload and is read-only in the web app. Remove these mock fields and read
- * the real `visibility` column once the API provides it.
+ * Data model: a "class" is a (teacher, period) pair. The mock student belongs to ONE
+ * class-period (Ms. Rivera · P3, group G1).
+ *
+ * TODO(backend): `visibility`/`owner_student_code` are not yet returned by the API,
+ * and the real read path (groupMeasurementRowsForDisplay) groups by MINUTE, not by
+ * session — see the "one-reading-per-session" flags noted to the team.
  */
-import { workspaceMeasurementsToDisplayRows } from '../utils/measurementRows';
 
 export const MOCK_DATA_ENABLED = true;
 
-/** The fake "current student": school, code, and the class-periods they belong to. */
+/** The fake "current student": school, code, and the single class-period they belong to. */
 export const MOCK_IDENTITY = {
   school: 'LINCOLN',
   studentCode: 'DEV001',
-  // The student's single class-period (teacher · period) and their group in it.
   memberships: [
     { instructor: 'Ms. Rivera', period: 'P3', group: 'G1' },
   ],
 };
 
-// Visibility tokens: 'public' | 'school' | 'class' | 'me'
-// Realistic ranges: pm25 ~5–55 µg/m³, co ~0.2–1.6 ppm, temp ~18–29 °C, humidity ~38–72 %.
-const RAW_MOCK_MEASUREMENTS = [
+// One entry per SESSION (14 total). Same scope/visibility structure as before, so the
+// verification table holds. durationSec = number of per-second readings (2–10 min).
+// Visibility tokens: 'public' | 'school' | 'class' | 'me'. Optional `event` adds a
+// gaussian spike to one metric mid-session.
+const SESSION_SPECS = [
   // === Ms. Rivera · P3 (the student's class), Group G1 (the student's group) ===
-  { id: 'm1', captured_at: '2026-06-01T13:12:00Z', session_id: 's1', session_code: 'R3G1-0601', session_name: 'Rivera P3 G1 Courtyard Walk', location_name: 'Main Courtyard', latitude: 40.8124, longitude: -73.9612, indoor_outdoor: 'OUTDOOR', school_code: 'LINCOLN', instructor: 'Ms. Rivera', period: 'P3', group_code: 'G1', pm25: 14, co: 0.5, temp: 21, humidity: 58, visibility: 'me', owner_student_code: 'DEV001' },
-  { id: 'm2', captured_at: '2026-06-02T08:47:00Z', session_id: 's2', session_code: 'R3G1-0602', session_name: 'Rivera P3 G1 Gym', location_name: 'Gymnasium', indoor_outdoor: 'INDOOR', school_code: 'LINCOLN', instructor: 'Ms. Rivera', period: 'P3', group_code: 'G1', pm25: 23, co: 0.8, temp: 24, humidity: 49, visibility: 'public', owner_student_code: 'DEV001' },
-  { id: 'm3', captured_at: '2026-06-04T14:05:00Z', session_id: 's3', session_code: 'R3G1-0604', session_name: 'Rivera P3 G1 Cafeteria', location_name: 'Cafeteria', indoor_outdoor: 'INDOOR', school_code: 'LINCOLN', instructor: 'Ms. Rivera', period: 'P3', group_code: 'G1', pm25: 31, co: 1.1, temp: 23, humidity: 61, visibility: 'class', owner_student_code: 'STU002' },
-  { id: 'm4', captured_at: '2026-06-10T09:30:00Z', session_id: 's4', session_code: 'R3G1-0610', session_name: 'Rivera P3 G1 Entrance', location_name: 'Front Entrance', latitude: 40.8131, longitude: -73.9627, indoor_outdoor: 'OUTDOOR', school_code: 'LINCOLN', instructor: 'Ms. Rivera', period: 'P3', group_code: 'G1', pm25: 9, co: 0.3, temp: 19, humidity: 66, visibility: 'school', owner_student_code: 'STU002' },
+  { id: 'm1', sessionId: 's1', sessionName: 'Rivera P3 G1 Courtyard Walk', location: 'Main Courtyard', latitude: 40.8124, longitude: -73.9612, indoorOutdoor: 'OUTDOOR', school: 'LINCOLN', instructor: 'Ms. Rivera', period: 'P3', group: 'G1', visibility: 'me', ownerCode: 'DEV001', date: '2026-06-01', startClock: '13:12:00', durationSec: 240, base: { pm25: 14, co: 0.5, temp: 21, humidity: 58 }, event: { metric: 'pm25', atFrac: 0.5, widthFrac: 0.06, magnitude: 34 } },
+  { id: 'm2', sessionId: 's2', sessionName: 'Rivera P3 G1 Gym', location: 'Gymnasium', indoorOutdoor: 'INDOOR', school: 'LINCOLN', instructor: 'Ms. Rivera', period: 'P3', group: 'G1', visibility: 'public', ownerCode: 'DEV001', date: '2026-06-02', startClock: '08:47:00', durationSec: 180, base: { pm25: 23, co: 0.8, temp: 24, humidity: 49 } },
+  { id: 'm3', sessionId: 's3', sessionName: 'Rivera P3 G1 Cafeteria', location: 'Cafeteria', indoorOutdoor: 'INDOOR', school: 'LINCOLN', instructor: 'Ms. Rivera', period: 'P3', group: 'G1', visibility: 'class', ownerCode: 'STU002', date: '2026-06-04', startClock: '14:05:00', durationSec: 300, base: { pm25: 31, co: 1.1, temp: 23, humidity: 61 } },
+  { id: 'm4', sessionId: 's4', sessionName: 'Rivera P3 G1 Entrance', location: 'Front Entrance', latitude: 40.8131, longitude: -73.9627, indoorOutdoor: 'OUTDOOR', school: 'LINCOLN', instructor: 'Ms. Rivera', period: 'P3', group: 'G1', visibility: 'school', ownerCode: 'STU002', date: '2026-06-10', startClock: '09:30:00', durationSec: 150, base: { pm25: 9, co: 0.3, temp: 19, humidity: 66 } },
 
   // === Ms. Rivera · P3, Group G2 (same class, other group) ===
-  { id: 'm5', captured_at: '2026-06-04T14:22:00Z', session_id: 's5', session_code: 'R3G2-0604', session_name: 'Rivera P3 G2 Library', location_name: 'Library', indoor_outdoor: 'INDOOR', school_code: 'LINCOLN', instructor: 'Ms. Rivera', period: 'P3', group_code: 'G2', pm25: 18, co: 0.6, temp: 22, humidity: 54, visibility: 'public', owner_student_code: 'STU003' },
-  { id: 'm6', captured_at: '2026-06-05T10:15:00Z', session_id: 's6', session_code: 'R3G2-0605', session_name: 'Rivera P3 G2 Chem Lab', location_name: 'Chemistry Lab', indoor_outdoor: 'INDOOR', school_code: 'LINCOLN', instructor: 'Ms. Rivera', period: 'P3', group_code: 'G2', pm25: 44, co: 1.5, temp: 26, humidity: 42, visibility: 'me', owner_student_code: 'STU003' }, // hidden from DEV001 (me-only, not owner)
-  { id: 'm7', captured_at: '2026-06-11T11:40:00Z', session_id: 's7', session_code: 'R3G2-0611', session_name: 'Rivera P3 G2 Art Studio', location_name: 'Art Studio', indoor_outdoor: 'INDOOR', school_code: 'LINCOLN', instructor: 'Ms. Rivera', period: 'P3', group_code: 'G2', pm25: 16, co: 0.5, temp: 22, humidity: 57, visibility: 'class', owner_student_code: 'STU004' },
+  { id: 'm5', sessionId: 's5', sessionName: 'Rivera P3 G2 Library', location: 'Library', indoorOutdoor: 'INDOOR', school: 'LINCOLN', instructor: 'Ms. Rivera', period: 'P3', group: 'G2', visibility: 'public', ownerCode: 'STU003', date: '2026-06-04', startClock: '14:22:00', durationSec: 210, base: { pm25: 18, co: 0.6, temp: 22, humidity: 54 } },
+  { id: 'm6', sessionId: 's6', sessionName: 'Rivera P3 G2 Chem Lab', location: 'Chemistry Lab', indoorOutdoor: 'INDOOR', school: 'LINCOLN', instructor: 'Ms. Rivera', period: 'P3', group: 'G2', visibility: 'me', ownerCode: 'STU003', date: '2026-06-05', startClock: '10:15:00', durationSec: 270, base: { pm25: 44, co: 1.5, temp: 26, humidity: 42 } }, // hidden from DEV001 (me-only, not owner)
+  { id: 'm7', sessionId: 's7', sessionName: 'Rivera P3 G2 Art Studio', location: 'Art Studio', indoorOutdoor: 'INDOOR', school: 'LINCOLN', instructor: 'Ms. Rivera', period: 'P3', group: 'G2', visibility: 'class', ownerCode: 'STU004', date: '2026-06-11', startClock: '11:40:00', durationSec: 240, base: { pm25: 16, co: 0.5, temp: 22, humidity: 57 } },
 
   // === Ms. Rivera · P5 (same teacher, DIFFERENT period → NOT the student's class) ===
-  { id: 'm8', captured_at: '2026-06-05T10:50:00Z', session_id: 's8', session_code: 'R5G1-0605', session_name: 'Rivera P5 G1 Band Room', location_name: 'Band Room', indoor_outdoor: 'INDOOR', school_code: 'LINCOLN', instructor: 'Ms. Rivera', period: 'P5', group_code: 'G1', pm25: 27, co: 0.9, temp: 24, humidity: 47, visibility: 'class', owner_student_code: 'STU005' }, // hidden from DEV001 (class-only, P5 not the student's period)
-  { id: 'm9', captured_at: '2026-06-12T13:05:00Z', session_id: 's9', session_code: 'R5G2-0612', session_name: 'Rivera P5 G2 Pool', location_name: 'Pool Deck', indoor_outdoor: 'OUTDOOR', school_code: 'LINCOLN', instructor: 'Ms. Rivera', period: 'P5', group_code: 'G2', pm25: 12, co: 0.4, temp: 27, humidity: 70, visibility: 'public', owner_student_code: 'STU006' },
-  { id: 'm10', captured_at: '2026-06-16T08:55:00Z', session_id: 's10', session_code: 'R5G1-0616', session_name: 'Rivera P5 G1 Aux Gym', location_name: 'Auxiliary Gym', indoor_outdoor: 'INDOOR', school_code: 'LINCOLN', instructor: 'Ms. Rivera', period: 'P5', group_code: 'G1', pm25: 20, co: 0.7, temp: 23, humidity: 51, visibility: 'school', owner_student_code: 'STU005' },
+  { id: 'm8', sessionId: 's8', sessionName: 'Rivera P5 G1 Band Room', location: 'Band Room', indoorOutdoor: 'INDOOR', school: 'LINCOLN', instructor: 'Ms. Rivera', period: 'P5', group: 'G1', visibility: 'class', ownerCode: 'STU005', date: '2026-06-05', startClock: '10:50:00', durationSec: 300, base: { pm25: 27, co: 0.9, temp: 24, humidity: 47 } }, // hidden from DEV001 (class-only, P5 not the student's period)
+  { id: 'm9', sessionId: 's9', sessionName: 'Rivera P5 G2 Pool', location: 'Pool Deck', indoorOutdoor: 'OUTDOOR', school: 'LINCOLN', instructor: 'Ms. Rivera', period: 'P5', group: 'G2', visibility: 'public', ownerCode: 'STU006', date: '2026-06-12', startClock: '13:05:00', durationSec: 600, base: { pm25: 12, co: 0.4, temp: 27, humidity: 70 } }, // ~10 min volume test
+  { id: 'm10', sessionId: 's10', sessionName: 'Rivera P5 G1 Aux Gym', location: 'Auxiliary Gym', indoorOutdoor: 'INDOOR', school: 'LINCOLN', instructor: 'Ms. Rivera', period: 'P5', group: 'G1', visibility: 'school', ownerCode: 'STU005', date: '2026-06-16', startClock: '08:55:00', durationSec: 200, base: { pm25: 20, co: 0.7, temp: 23, humidity: 51 } },
 
   // === Mr. Chen · P2 (a DIFFERENT class, the student is not in it), Group G3 ===
-  { id: 'm11', captured_at: '2026-06-05T15:20:00Z', session_id: 's11', session_code: 'C2G3-0605', session_name: 'Chen P2 G3 Field', location_name: 'Athletic Field', latitude: 40.8210, longitude: -73.9514, indoor_outdoor: 'OUTDOOR', school_code: 'LINCOLN', instructor: 'Mr. Chen', period: 'P2', group_code: 'G3', pm25: 8, co: 0.2, temp: 20, humidity: 63, visibility: 'class', owner_student_code: 'STU010' }, // hidden from DEV001 (class-only, not the student's class)
-  { id: 'm12', captured_at: '2026-06-15T12:30:00Z', session_id: 's12', session_code: 'C2G3-0615', session_name: 'Chen P2 G3 Hallway', location_name: 'Main Hallway', indoor_outdoor: 'INDOOR', school_code: 'LINCOLN', instructor: 'Mr. Chen', period: 'P2', group_code: 'G3', pm25: 35, co: 1.2, temp: 25, humidity: 45, visibility: 'public', owner_student_code: 'STU010' },
+  { id: 'm11', sessionId: 's11', sessionName: 'Chen P2 G3 Field', location: 'Athletic Field', latitude: 40.8210, longitude: -73.9514, indoorOutdoor: 'OUTDOOR', school: 'LINCOLN', instructor: 'Mr. Chen', period: 'P2', group: 'G3', visibility: 'class', ownerCode: 'STU010', date: '2026-06-05', startClock: '15:20:00', durationSec: 180, base: { pm25: 8, co: 0.2, temp: 20, humidity: 63 } }, // hidden from DEV001 (class-only, not the student's class)
+  { id: 'm12', sessionId: 's12', sessionName: 'Chen P2 G3 Hallway', location: 'Main Hallway', indoorOutdoor: 'INDOOR', school: 'LINCOLN', instructor: 'Mr. Chen', period: 'P2', group: 'G3', visibility: 'public', ownerCode: 'STU010', date: '2026-06-15', startClock: '12:30:00', durationSec: 360, base: { pm25: 35, co: 1.2, temp: 25, humidity: 45 }, event: { metric: 'pm25', atFrac: 0.4, widthFrac: 0.05, magnitude: 28 } },
 
   // === Mr. Chen · P2, Group G4 (same class, other group) ===
-  { id: 'm13', captured_at: '2026-06-17T13:45:00Z', session_id: 's13', session_code: 'C2G4-0617', session_name: 'Chen P2 G4 Lot', location_name: 'Parking Lot', latitude: 40.8228, longitude: -73.9521, indoor_outdoor: 'OUTDOOR', school_code: 'LINCOLN', instructor: 'Mr. Chen', period: 'P2', group_code: 'G4', pm25: 52, co: 1.6, temp: 28, humidity: 38, visibility: 'school', owner_student_code: 'STU011' },
-  { id: 'm14', captured_at: '2026-06-18T14:10:00Z', session_id: 's14', session_code: 'C2G4-0618', session_name: 'Chen P2 G4 Track', location_name: 'Running Track', indoor_outdoor: 'OUTDOOR', school_code: 'LINCOLN', instructor: 'Mr. Chen', period: 'P2', group_code: 'G4', pm25: 11, co: 0.3, temp: 21, humidity: 60, visibility: 'me', owner_student_code: 'STU011' }, // hidden from DEV001 (me-only, not owner)
+  { id: 'm13', sessionId: 's13', sessionName: 'Chen P2 G4 Lot', location: 'Parking Lot', latitude: 40.8228, longitude: -73.9521, indoorOutdoor: 'OUTDOOR', school: 'LINCOLN', instructor: 'Mr. Chen', period: 'P2', group: 'G4', visibility: 'school', ownerCode: 'STU011', date: '2026-06-17', startClock: '13:45:00', durationSec: 600, base: { pm25: 52, co: 1.6, temp: 28, humidity: 38 }, event: { metric: 'pm25', atFrac: 0.6, widthFrac: 0.04, magnitude: 48 } }, // ~10 min + car-passing spike
+  { id: 'm14', sessionId: 's14', sessionName: 'Chen P2 G4 Track', location: 'Running Track', indoorOutdoor: 'OUTDOOR', school: 'LINCOLN', instructor: 'Mr. Chen', period: 'P2', group: 'G4', visibility: 'me', ownerCode: 'STU011', date: '2026-06-18', startClock: '14:10:00', durationSec: 160, base: { pm25: 11, co: 0.3, temp: 21, humidity: 60 } }, // hidden from DEV001 (me-only, not owner)
 ];
 
-// Map raw API rows → display rows, then re-attach the mock-only visibility/owner
-// fields (the shared mapper doesn't know about them).
-const displayRows = workspaceMeasurementsToDisplayRows(RAW_MOCK_MEASUREMENTS);
-export const MOCK_MEASUREMENTS = displayRows.map((row) => {
-  const src = RAW_MOCK_MEASUREMENTS.find((r) => `chunk-${r.id}` === row.id) || {};
-  return { ...row, visibility: src.visibility, ownerCode: src.owner_student_code };
-});
+// Deterministic PRNG so the data (and the calendar / charts) are stable across reloads.
+function makeRng(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+// Expand one session spec into a session display row containing per-second readings.
+function buildSession(spec, index) {
+  const rng = makeRng(2026 + index * 131 + spec.durationSec);
+  const startMs = Date.parse(`${spec.date}T${spec.startClock}Z`);
+  const n = spec.durationSec;
+  const phase = index * 0.7;
+  const readings = [];
+  let sumPm = 0, sumCo = 0, sumTemp = 0, sumHum = 0;
+
+  for (let i = 0; i < n; i++) {
+    const frac = n > 1 ? i / (n - 1) : 0;
+    const iso = new Date(startMs + i * 1000).toISOString();
+    const drift = (amp, mult) => amp * Math.sin(2 * Math.PI * frac * mult + phase);
+    const noise = (scale) => (rng() - 0.5) * 2 * scale;
+    const eventBump = (metric) => {
+      const ev = spec.event;
+      if (!ev || ev.metric !== metric) return 0;
+      return ev.magnitude * Math.exp(-Math.pow((frac - ev.atFrac) / ev.widthFrac, 2));
+    };
+
+    const pm25 = Math.max(0, Math.round(spec.base.pm25 + drift(spec.base.pm25 * 0.12 + 1, 1.5) + noise(1.2) + eventBump('pm25')));
+    const co = Math.max(0, Number((spec.base.co + drift(spec.base.co * 0.12 + 0.03, 1.2) + noise(0.04) + eventBump('co')).toFixed(2)));
+    const temp = Math.round(spec.base.temp + drift(1.1, 1.0) + noise(0.3) + eventBump('temp'));
+    const humidity = Math.max(0, Math.min(100, Math.round(spec.base.humidity + drift(2.5, 0.8) + noise(0.8) + eventBump('humidity'))));
+
+    readings.push({ id: `${spec.id}-${i}`, time: iso.slice(11, 19), pm25, co, temp, humidity });
+    sumPm += pm25; sumCo += co; sumTemp += temp; sumHum += humidity;
+  }
+
+  const startIso = new Date(startMs).toISOString();
+  return {
+    id: spec.id,
+    sessionId: spec.sessionId,
+    sessionName: spec.sessionName,
+    sessionNotes: '',
+    date: startIso.slice(0, 10),
+    time: startIso.slice(11, 16),
+    capturedAt: startIso,
+    location: spec.location,
+    latitude: spec.latitude ?? null,
+    longitude: spec.longitude ?? null,
+    indoorOutdoor: spec.indoorOutdoor,
+    school: spec.school,
+    instructor: spec.instructor,
+    period: spec.period,
+    group: spec.group,
+    // Session summary = MEAN per metric (matches groupMeasurementRowsForDisplay).
+    pm25: Math.round(sumPm / n),
+    co: (sumCo / n).toFixed(2),
+    temp: Math.round(sumTemp / n),
+    humidity: Math.round(sumHum / n),
+    photos: [],
+    edits: {},
+    count: n,
+    detailedData: readings,
+    visibility: spec.visibility,
+    ownerCode: spec.ownerCode,
+  };
+}
+
+export const MOCK_MEASUREMENTS = SESSION_SPECS.map(buildSession);
 
 /**
  * True if `row` is visible to `identity` under the phone-set visibility rules.
- * "class only" means the SAME class-period (teacher AND period), checked against
- * any of the viewer's memberships.
+ * "class only" means the SAME class-period (teacher AND period).
  */
 export function isRowVisibleToViewer(row, identity) {
   switch (row.visibility) {
@@ -85,7 +152,6 @@ export function isRowVisibleToViewer(row, identity) {
     case 'me':
       return row.ownerCode === identity.studentCode;
     default:
-      // Real backend rows have no visibility field yet → show them.
       return true;
   }
 }
