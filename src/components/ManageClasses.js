@@ -38,9 +38,11 @@ export default function ManageClasses({
   const [draftGroup, setDraftGroup] = useState('G1');
   const [busy, setBusy] = useState(false);
   const [periodCount, setPeriodCount] = useState(1);
-  // Per-period group counts: draft (edited in the structure card) + saved snapshot.
-  const [groupCounts, setGroupCounts] = useState({}); // { P3: 3, P5: 6 }
+  // Per-period structure: the draft is an editable list of rows; the saved snapshot stays separate.
+  // draft row: { name, groups, savedName }  (savedName === null => newly added in this draft)
+  const [draftRows, setDraftRows] = useState([]);
   const [savedGroupCounts, setSavedGroupCounts] = useState({});
+  const [deleteCodeTarget, setDeleteCodeTarget] = useState(null); // join code pending deletion
   // Actual period labels (e.g. P3, P5) when known; falls back to P1..Pn.
   const [periodLabels, setPeriodLabels] = useState(null);
   // Section 3: default visibility for new uploads/classes (public | school | group).
@@ -81,9 +83,9 @@ export default function ManageClasses({
       setMembers(MOCK_ROSTER);
       setJoinCodes(MOCK_JOIN_CODES);
       setPeriodCount(MOCK_CLASS_STRUCTURE.periods.length);
-      setGroupCounts(MOCK_CLASS_STRUCTURE.groupCounts);
       setSavedGroupCounts(MOCK_CLASS_STRUCTURE.groupCounts);
       setPeriodLabels(MOCK_CLASS_STRUCTURE.periods);
+      setDraftRows(MOCK_CLASS_STRUCTURE.periods.map((p) => ({ name: p, groups: MOCK_CLASS_STRUCTURE.groupCounts[p], savedName: p })));
       setDefaultVisibility(MOCK_CLASS_STRUCTURE.defaultVisibility || 'group');
       setError('');
       return;
@@ -105,9 +107,9 @@ export default function ManageClasses({
       const bCounts = {};
       bPeriods.forEach((p) => { bCounts[p] = bg; });
       setPeriodCount(bp);
-      setGroupCounts(bCounts);
       setSavedGroupCounts(bCounts);
       setPeriodLabels(bPeriods);
+      setDraftRows(bPeriods.map((p) => ({ name: p, groups: bCounts[p], savedName: p })));
       setError('');
     } catch (e) {
       setError(e.message || 'Failed to load class management data.');
@@ -122,23 +124,36 @@ export default function ManageClasses({
 
   const doSaveStructure = async () => {
     const np = Number(periodCount);
-    const keptPeriods = savedPeriods.slice(0, np);
+    const active = draftRows.slice(0, np);
+    const names = active.map((r) => (r.name || '').trim());
+    if (names.some((n) => !n)) { setError('Period names cannot be empty.'); return; }
+    if (new Set(names).size !== names.length) { setError('Period names must be unique.'); return; }
+
     if (MOCK_DATA_ENABLED) {
-      // Dev: apply locally. Keep named periods (drop the trimmed tail) and snapshot the
-      // per-period group counts.
-      // TODO(period-rename): adding/renaming periods needs explicit names, not just counts.
-      setPeriodLabels(keptPeriods);
-      const next = {};
-      keptPeriods.forEach((p) => { next[p] = Number(groupCounts[p]) || 0; });
-      setSavedGroupCounts(next);
+      // Period naming: a kept row whose name changed from its savedName is a rename → propagate
+      // to members and join codes so roster / groups / codes / overview all follow the new name.
+      const renames = {};
+      active.forEach((r, i) => {
+        if (r.savedName && r.savedName !== names[i]) renames[r.savedName] = names[i];
+      });
+      if (Object.keys(renames).length) {
+        setMembers((prev) => prev.map((m) => (renames[m.period] ? { ...m, period: renames[m.period] } : m)));
+        setJoinCodes((prev) => prev.map((c) => (renames[c.period] ? { ...c, period: renames[c.period] } : c)));
+      }
+      const nextCounts = {};
+      active.forEach((r, i) => { nextCounts[names[i]] = Number(r.groups) || 0; });
+      setPeriodLabels(names);
+      setSavedGroupCounts(nextCounts);
+      setDraftRows(active.map((r, i) => ({ name: names[i], groups: Number(r.groups) || 0, savedName: names[i] })));
+      setPeriodCount(names.length);
       setError('');
       return;
     }
     try {
       setBusy(true);
-      // TODO(backend): structure model moves from (periodCount, groupCount) to a per-period
-      // list of group counts. Until then, send the max group count as a compatibility shim.
-      const ng = Math.max(1, ...keptPeriods.map((p) => Number(groupCounts[p]) || 0));
+      // TODO(backend): structure model needs a per-period list of { name, groupCount } with
+      // rename support. Until then, send count + max group count as a compatibility shim.
+      const ng = Math.max(1, ...active.map((r) => Number(r.groups) || 0));
       const updated = await updateClassStructure(workspaceId, { periodCount: np, groupCount: ng });
       setPeriodCount(updated.periodCount || np);
       setError('');
@@ -151,21 +166,48 @@ export default function ManageClasses({
   };
 
   // Section 4: block shrinking out a period/group that still has accounts or sessions.
-  // Per-period now: reducing one period's group count only flags THAT period's removed groups.
+  // Per-position vs the SAVED structure: a removed period (row beyond the count) flags ALL its
+  // groups; a kept period flags only the groups beyond its reduced count. Members are keyed by
+  // the SAVED period name (renames apply only after a clean save).
   const handleSaveClassStructure = () => {
-    const keptPeriods = savedPeriods.slice(0, Number(periodCount));
+    const activeCount = Number(periodCount);
     const blockers = [];
-    savedPeriods.forEach((p) => {
-      const keptCount = keptPeriods.includes(p) ? (Number(groupCounts[p]) || 0) : 0;
-      groupsFor(p).forEach((g) => {
+    savedPeriods.forEach((savedName, i) => {
+      const row = draftRows[i];
+      const keptCount = row && i < activeCount ? (Number(row.groups) || 0) : 0;
+      groupsFor(savedName).forEach((g) => {
         if (Number(g.slice(1)) <= keptCount) return; // still within the kept range
-        const acc = accountsByGroup[`${p} ${g}`] || 0;
-        const sess = sessionsByGroup[`${p} ${g}`] || 0;
-        if (acc > 0 || sess > 0) blockers.push({ period: p, group: g, accounts: acc, sessions: sess });
+        const acc = accountsByGroup[`${savedName} ${g}`] || 0;
+        const sess = sessionsByGroup[`${savedName} ${g}`] || 0;
+        if (acc > 0 || sess > 0) blockers.push({ period: savedName, group: g, accounts: acc, sessions: sess });
       });
     });
     if (blockers.length === 0) { doSaveStructure(); return; }
     setShrink({ blockers, hasMembers: blockers.some((b) => b.accounts > 0) });
+  };
+
+  // Period count input grows the draft rows live (new rows default to the P# pattern + 4 groups);
+  // lowering keeps the rows but marks the tail for removal.
+  const onPeriodCountChange = (val) => {
+    setPeriodCount(val);
+    const target = Number(val) || 0;
+    setDraftRows((prev) => {
+      if (target <= prev.length) return prev;
+      const rows = [...prev];
+      let maxNum = rows.reduce((mx, r) => Math.max(mx, parseInt(String(r.name).replace(/\D/g, ''), 10) || 0), 0);
+      while (rows.length < target) {
+        maxNum += 1;
+        rows.push({ name: `P${maxNum}`, groups: 4, savedName: null });
+      }
+      return rows;
+    });
+  };
+
+  const doDeleteCode = (code) => {
+    if (!code) return;
+    // TODO(backend): code-delete endpoint. Mock: drop the record locally; members are unaffected.
+    setJoinCodes((prev) => prev.filter((c) => c.id !== code.id));
+    setDeleteCodeTarget(null);
   };
 
   const showToast = (message, undo) => {
@@ -350,6 +392,8 @@ export default function ManageClasses({
   // Group labels for a period derive from its saved count (G1..Gn) — counts can differ per period.
   const groupsFor = (period) => Array.from({ length: savedGroupCounts[period] || 0 }, (_, i) => `G${i + 1}`);
   const studentMembers = members.filter((m) => m.role === 'student');
+  // A join code counts as "used" if any member is in its period (proxy for sign-ups via that code).
+  const codeUsed = (code) => studentMembers.some((m) => m.period === code.period);
   const accountsByGroup = {};
   studentMembers.forEach((m) => {
     const key = `${m.period} ${m.group_code}`;
@@ -467,7 +511,7 @@ export default function ManageClasses({
                 min={1}
                 max={12}
                 value={periodCount}
-                onChange={(e) => setPeriodCount(e.target.value)}
+                onChange={(e) => onPeriodCountChange(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg"
               />
             </div>
@@ -487,25 +531,42 @@ export default function ManageClasses({
             </div>
           </div>
           <div className="mb-3">
-            <label className="block text-xs text-gray-500 mb-1">Groups per period</label>
+            <label className="block text-xs text-gray-500 mb-1">Periods &amp; groups (draft — editable names)</label>
             <div className="space-y-2">
-              {savedPeriods.map((p) => (
-                <div key={p} className="flex items-center gap-2">
-                  <span className="w-10 text-sm font-medium text-gray-700">{p}</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={12}
-                    value={groupCounts[p] ?? ''}
-                    onChange={(e) => setGroupCounts((prev) => ({ ...prev, [p]: e.target.value }))}
-                    className="w-24 px-3 py-2 border border-gray-300 rounded-lg"
-                  />
-                  <span className="text-xs text-gray-500">groups</span>
-                </div>
-              ))}
+              {draftRows.map((row, i) => {
+                const active = i < Number(periodCount);
+                const isNew = row.savedName === null;
+                const isRenamed = !isNew && (row.name || '').trim() !== row.savedName;
+                const isResized = !isNew && Number(row.groups) !== (savedGroupCounts[row.savedName] || 0);
+                return (
+                  <div key={i} className={`flex items-center gap-2 ${active ? '' : 'opacity-70'}`}>
+                    <input
+                      type="text"
+                      value={row.name}
+                      maxLength={6}
+                      onChange={(e) => setDraftRows((prev) => prev.map((r, j) => (j === i ? { ...r, name: e.target.value } : r)))}
+                      className={`w-16 px-2 py-2 border rounded-lg text-sm ${active ? 'border-gray-300' : 'border-red-200 line-through text-gray-400'}`}
+                    />
+                    <input
+                      type="number"
+                      min={1}
+                      max={12}
+                      value={row.groups}
+                      disabled={!active}
+                      onChange={(e) => setDraftRows((prev) => prev.map((r, j) => (j === i ? { ...r, groups: e.target.value } : r)))}
+                      className="w-20 px-3 py-2 border border-gray-300 rounded-lg disabled:bg-gray-50 disabled:text-gray-400"
+                    />
+                    <span className="text-xs text-gray-500">groups</span>
+                    {!active && <span className="text-xs px-1.5 py-0.5 rounded bg-red-100 text-red-700">will remove</span>}
+                    {active && isNew && <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">new · unsaved</span>}
+                    {active && !isNew && (isRenamed || isResized) && <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">unsaved</span>}
+                  </div>
+                );
+              })}
             </div>
-            {/* TODO(backend): NEW spec implication — class-structure model changes from
-                (periodCount, groupCount) to a per-period list of group counts. Propose in API_REFERENCE.md. */}
+            <p className="text-xs text-gray-500 mt-2">Edit a period name to rename it — renames apply to codes, roster, and groups on save.</p>
+            {/* TODO(backend): structure model needs a per-period list of { name, groupCount } with
+                rename support (renames propagate to members/codes). Propose in API_REFERENCE.md. */}
           </div>
           <button
             disabled={busy}
@@ -581,6 +642,13 @@ export default function ManageClasses({
                     className={`px-3 py-1 rounded text-xs font-semibold ${code.active ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-700'}`}
                   >
                     {code.active ? 'Active' : 'Inactive'}
+                  </button>
+                  <button
+                    onClick={() => setDeleteCodeTarget(code)}
+                    title="Delete code"
+                    className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600"
+                  >
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
@@ -940,6 +1008,21 @@ export default function ManageClasses({
         confirmLabel="Remove"
         onCancel={() => setRemoveTarget(null)}
         onConfirm={() => doRemoveStudent(removeTarget)}
+      />
+
+      {/* Fix 2: delete-join-code confirmation (shared ConfirmDialog) */}
+      <ConfirmDialog
+        open={!!deleteCodeTarget}
+        variant={deleteCodeTarget && codeUsed(deleteCodeTarget) ? 'danger' : 'default'}
+        title="Delete join code?"
+        message={deleteCodeTarget
+          ? (codeUsed(deleteCodeTarget)
+              ? `${deleteCodeTarget.code} has been used by members of ${deleteCodeTarget.period}. Removing it deletes the code record only — those members stay in the class and keep their accounts.`
+              : `${deleteCodeTarget.code} hasn't been used yet. Remove this code?`)
+          : ''}
+        confirmLabel="Delete code"
+        onCancel={() => setDeleteCodeTarget(null)}
+        onConfirm={() => doDeleteCode(deleteCodeTarget)}
       />
     </div>
   );
