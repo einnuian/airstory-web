@@ -21,25 +21,27 @@ export const MOCK_CLASS_STRUCTURE = {
   school: 'LINCOLN',
   teacher: 'Ms. Rivera',
   periods: ['P3', 'P5'],
-  groupsPerPeriod: 4,
-  groups: ['G1', 'G2', 'G3', 'G4'],
+  // Per-period group counts — periods can differ (P3 has 3 groups, P5 has 6).
+  groupCounts: { P3: 3, P5: 6 },
   defaultVisibility: 'group', // public | school | group
 };
 
 const pad = (n) => String(n).padStart(2, '0');
 
 // period, group, username, full_name ('' = shared/legacy account → username fallback in Name)
+// P3 has 3 groups (G1–G3), P5 has 6 (G1–G6). P5·G6 is empty → coverage "8 of 9".
 const ACCOUNTS = [
   { period: 'P3', group: 'G1', username: 'ava.martinez', full_name: 'Ava Martinez' },
   { period: 'P3', group: 'G1', username: 'lincoln-p3-g1', full_name: '' }, // shared
   { period: 'P3', group: 'G2', username: 'liam.chen', full_name: 'Liam Chen' },
   { period: 'P3', group: 'G3', username: 'noah.patel', full_name: 'Noah Patel' },
-  { period: 'P3', group: 'G4', username: 'emma.davis', full_name: 'Emma Davis' },
   { period: 'P5', group: 'G1', username: 'olivia.brown', full_name: 'Olivia Brown' },
   { period: 'P5', group: 'G2', username: 'sophia.garcia', full_name: 'Sophia Garcia' },
   { period: 'P5', group: 'G2', username: 'mason.lee', full_name: 'Mason Lee' },
   { period: 'P5', group: 'G3', username: 'lincoln-p5-g3', full_name: '' }, // shared
-  // P5 · G4 intentionally has no account (coverage gap).
+  { period: 'P5', group: 'G4', username: 'emma.davis', full_name: 'Emma Davis' },
+  { period: 'P5', group: 'G5', username: 'lucas.kim', full_name: 'Lucas Kim' },
+  // P5 · G6 intentionally has no account (coverage gap).
 ];
 
 export const MOCK_ROSTER = ACCOUNTS.map((a, i) => ({

@@ -38,10 +38,11 @@ export default function ManageClasses({
   const [draftGroup, setDraftGroup] = useState('G1');
   const [busy, setBusy] = useState(false);
   const [periodCount, setPeriodCount] = useState(1);
-  const [groupCount, setGroupCount] = useState(6);
-  // Actual period/group labels (e.g. P3, P5) when known; falls back to P1..Pn / G1..Gn.
+  // Per-period group counts: draft (edited in the structure card) + saved snapshot.
+  const [groupCounts, setGroupCounts] = useState({}); // { P3: 3, P5: 6 }
+  const [savedGroupCounts, setSavedGroupCounts] = useState({});
+  // Actual period labels (e.g. P3, P5) when known; falls back to P1..Pn.
   const [periodLabels, setPeriodLabels] = useState(null);
-  const [groupLabels, setGroupLabels] = useState(null);
   // Section 3: default visibility for new uploads/classes (public | school | group).
   const [defaultVisibility, setDefaultVisibility] = useState('group');
   const [copiedCode, setCopiedCode] = useState('');
@@ -50,6 +51,10 @@ export default function ManageClasses({
   const [removeTarget, setRemoveTarget] = useState(null); // account pending removal
   const [rosterPeriod, setRosterPeriod] = useState('all');
   const [showHelp, setShowHelp] = useState(false);
+  // Refinement 3: drag-and-drop members between groups + undo toast.
+  const [dragMember, setDragMember] = useState(null);
+  const [dropTarget, setDropTarget] = useState(null); // `${period}-${group}` being hovered
+  const [toast, setToast] = useState(null); // { message, undo } | null
 
   const generateRandomCode = () => {
     const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -76,9 +81,9 @@ export default function ManageClasses({
       setMembers(MOCK_ROSTER);
       setJoinCodes(MOCK_JOIN_CODES);
       setPeriodCount(MOCK_CLASS_STRUCTURE.periods.length);
-      setGroupCount(MOCK_CLASS_STRUCTURE.groupsPerPeriod);
+      setGroupCounts(MOCK_CLASS_STRUCTURE.groupCounts);
+      setSavedGroupCounts(MOCK_CLASS_STRUCTURE.groupCounts);
       setPeriodLabels(MOCK_CLASS_STRUCTURE.periods);
-      setGroupLabels(MOCK_CLASS_STRUCTURE.groups);
       setDefaultVisibility(MOCK_CLASS_STRUCTURE.defaultVisibility || 'group');
       setError('');
       return;
@@ -92,8 +97,17 @@ export default function ManageClasses({
       ]);
       setMembers(roster.members || []);
       setJoinCodes(codes.joinCodes || []);
-      setPeriodCount(structure.periodCount || 1);
-      setGroupCount(structure.groupCount || 4);
+      // TODO(backend): structure is still (periodCount, groupCount) — expand to uniform
+      // per-period counts until the backend returns a per-period list.
+      const bp = structure.periodCount || 1;
+      const bg = structure.groupCount || 4;
+      const bPeriods = Array.from({ length: bp }, (_, i) => `P${i + 1}`);
+      const bCounts = {};
+      bPeriods.forEach((p) => { bCounts[p] = bg; });
+      setPeriodCount(bp);
+      setGroupCounts(bCounts);
+      setSavedGroupCounts(bCounts);
+      setPeriodLabels(bPeriods);
       setError('');
     } catch (e) {
       setError(e.message || 'Failed to load class management data.');
@@ -108,21 +122,25 @@ export default function ManageClasses({
 
   const doSaveStructure = async () => {
     const np = Number(periodCount);
-    const ng = Number(groupCount);
+    const keptPeriods = savedPeriods.slice(0, np);
     if (MOCK_DATA_ENABLED) {
-      // Dev: apply locally, keeping named periods/groups (drop the trimmed tail).
-      // TODO(period-rename): adding/renaming periods needs explicit names, not just counts —
-      // teachers think in P3/P5, not P1..Pn. The count input grows/shrinks; renaming is future work.
-      setPeriodLabels((prev) => (prev || savedPeriods).slice(0, np));
-      setGroupLabels((prev) => (prev || savedGroups).slice(0, ng));
+      // Dev: apply locally. Keep named periods (drop the trimmed tail) and snapshot the
+      // per-period group counts.
+      // TODO(period-rename): adding/renaming periods needs explicit names, not just counts.
+      setPeriodLabels(keptPeriods);
+      const next = {};
+      keptPeriods.forEach((p) => { next[p] = Number(groupCounts[p]) || 0; });
+      setSavedGroupCounts(next);
       setError('');
       return;
     }
     try {
       setBusy(true);
+      // TODO(backend): structure model moves from (periodCount, groupCount) to a per-period
+      // list of group counts. Until then, send the max group count as a compatibility shim.
+      const ng = Math.max(1, ...keptPeriods.map((p) => Number(groupCounts[p]) || 0));
       const updated = await updateClassStructure(workspaceId, { periodCount: np, groupCount: ng });
       setPeriodCount(updated.periodCount || np);
-      setGroupCount(updated.groupCount || ng);
       setError('');
       onClassStructureChanged?.(updated);
     } catch (e) {
@@ -133,18 +151,46 @@ export default function ManageClasses({
   };
 
   // Section 4: block shrinking out a period/group that still has accounts or sessions.
+  // Per-period now: reducing one period's group count only flags THAT period's removed groups.
   const handleSaveClassStructure = () => {
     const keptPeriods = savedPeriods.slice(0, Number(periodCount));
-    const keptGroups = savedGroups.slice(0, Number(groupCount));
     const blockers = [];
-    savedPeriods.forEach((p) => savedGroups.forEach((g) => {
-      if (keptPeriods.includes(p) && keptGroups.includes(g)) return;
-      const acc = accountsByGroup[`${p} ${g}`] || 0;
-      const sess = sessionsByGroup[`${p} ${g}`] || 0;
-      if (acc > 0 || sess > 0) blockers.push({ period: p, group: g, accounts: acc, sessions: sess });
-    }));
+    savedPeriods.forEach((p) => {
+      const keptCount = keptPeriods.includes(p) ? (Number(groupCounts[p]) || 0) : 0;
+      groupsFor(p).forEach((g) => {
+        if (Number(g.slice(1)) <= keptCount) return; // still within the kept range
+        const acc = accountsByGroup[`${p} ${g}`] || 0;
+        const sess = sessionsByGroup[`${p} ${g}`] || 0;
+        if (acc > 0 || sess > 0) blockers.push({ period: p, group: g, accounts: acc, sessions: sess });
+      });
+    });
     if (blockers.length === 0) { doSaveStructure(); return; }
     setShrink({ blockers, hasMembers: blockers.some((b) => b.accounts > 0) });
+  };
+
+  const showToast = (message, undo) => {
+    setToast({ message, undo });
+    setTimeout(() => setToast((t) => (t && t.message === message ? null : t)), 5000);
+  };
+
+  // Refinement 3: drop a dragged member chip onto a group in the SAME period to move them.
+  const handleGroupDrop = (period, group) => {
+    const m = dragMember;
+    setDragMember(null);
+    setDropTarget(null);
+    if (!m) return;
+    if (m.period !== period) {
+      showToast("Can't move between periods — a member belongs to one class-period.", null);
+      return;
+    }
+    if (m.group_code === group) return;
+    const fromGroup = m.group_code;
+    const applyGroup = (g) => {
+      setMembers((prev) => prev.map((x) => (x.id === m.id ? { ...x, group_code: g } : x)));
+      if (!MOCK_DATA_ENABLED) updateStudentPlacement(workspaceId, m.id, { period, groupCode: g }).catch(() => {});
+    };
+    applyGroup(group);
+    showToast(`Moved ${m.full_name || m.username} to ${period} · ${group}`, () => applyGroup(fromGroup));
   };
 
   const shareCode = (period) => {
@@ -301,18 +347,17 @@ export default function ManageClasses({
   const savedPeriods = (periodLabels && periodLabels.length)
     ? periodLabels
     : Array.from({ length: periodCount || 1 }, (_, i) => `P${i + 1}`);
-  const savedGroups = (groupLabels && groupLabels.length)
-    ? groupLabels
-    : Array.from({ length: groupCount || 4 }, (_, i) => `G${i + 1}`);
+  // Group labels for a period derive from its saved count (G1..Gn) — counts can differ per period.
+  const groupsFor = (period) => Array.from({ length: savedGroupCounts[period] || 0 }, (_, i) => `G${i + 1}`);
   const studentMembers = members.filter((m) => m.role === 'student');
   const accountsByGroup = {};
   studentMembers.forEach((m) => {
     const key = `${m.period} ${m.group_code}`;
     accountsByGroup[key] = (accountsByGroup[key] || 0) + 1;
   });
-  const totalGroupSlots = savedPeriods.length * savedGroups.length;
+  const totalGroupSlots = savedPeriods.reduce((sum, p) => sum + groupsFor(p).length, 0);
   let coveredGroups = 0;
-  savedPeriods.forEach((p) => savedGroups.forEach((g) => {
+  savedPeriods.forEach((p) => groupsFor(p).forEach((g) => {
     if (accountsByGroup[`${p} ${g}`] > 0) coveredGroups += 1;
   }));
   const coverageWarn = coveredGroups < totalGroupSlots;
@@ -333,7 +378,7 @@ export default function ManageClasses({
   const rosterRows = [];
   savedPeriods.forEach((period) => {
     if (rosterPeriod !== 'all' && rosterPeriod !== period) return;
-    savedGroups.forEach((group) => {
+    groupsFor(period).forEach((group) => {
       const accts = studentMembers.filter((m) => m.period === period && m.group_code === group);
       rosterRows.push({ period, group, accts });
     });
@@ -388,7 +433,9 @@ export default function ManageClasses({
           </div>
           <div>
             <p className="text-xs text-gray-500">Groups / period</p>
-            <p className="text-lg font-bold text-gray-900">{savedGroups.length}</p>
+            <p className="text-sm font-bold text-gray-900">
+              {savedPeriods.map((p) => `${p} · ${savedGroupCounts[p] || 0}`).join(', ') || '—'}
+            </p>
           </div>
           <div>
             <p className="text-xs text-gray-500">Members joined</p>
@@ -412,7 +459,7 @@ export default function ManageClasses({
             </div>
             <h3 className="text-xl font-bold text-gray-900">Class Structure</h3>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+          <div className="grid grid-cols-2 gap-3 mb-3">
             <div>
               <label className="block text-xs text-gray-500 mb-1">Period count</label>
               <input
@@ -421,17 +468,6 @@ export default function ManageClasses({
                 max={12}
                 value={periodCount}
                 onChange={(e) => setPeriodCount(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Groups per period</label>
-              <input
-                type="number"
-                min={1}
-                max={12}
-                value={groupCount}
-                onChange={(e) => setGroupCount(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg"
               />
             </div>
@@ -449,6 +485,27 @@ export default function ManageClasses({
                 <option value="public">Public</option>
               </select>
             </div>
+          </div>
+          <div className="mb-3">
+            <label className="block text-xs text-gray-500 mb-1">Groups per period</label>
+            <div className="space-y-2">
+              {savedPeriods.map((p) => (
+                <div key={p} className="flex items-center gap-2">
+                  <span className="w-10 text-sm font-medium text-gray-700">{p}</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={12}
+                    value={groupCounts[p] ?? ''}
+                    onChange={(e) => setGroupCounts((prev) => ({ ...prev, [p]: e.target.value }))}
+                    className="w-24 px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                  <span className="text-xs text-gray-500">groups</span>
+                </div>
+              ))}
+            </div>
+            {/* TODO(backend): NEW spec implication — class-structure model changes from
+                (periodCount, groupCount) to a per-period list of group counts. Propose in API_REFERENCE.md. */}
           </div>
           <button
             disabled={busy}
@@ -477,7 +534,7 @@ export default function ManageClasses({
             onChange={(e) => setNewCode(e.target.value.toUpperCase())}
             placeholder="5-char code"
             maxLength={5}
-            className="px-3 py-2 border border-gray-300 rounded-lg w-32 font-mono"
+            className="px-3 py-2 border border-gray-300 rounded-lg w-44 font-mono"
           />
           <select
             value={newCodePeriod}
@@ -499,7 +556,7 @@ export default function ManageClasses({
             Create code
           </button>
         </div>
-        <div className="space-y-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
           {joinCodes.map((code) => (
             <div key={code.id} className="p-3 bg-gray-50 rounded-lg">
               <div className="flex items-center justify-between">
@@ -604,7 +661,7 @@ export default function ManageClasses({
             </div>
             <div>
               <h3 className="text-xl font-bold text-gray-900">Groups</h3>
-              <p className="text-xs text-gray-500">Composition &amp; coverage — every group needs ≥1 working account.</p>
+              <p className="text-xs text-gray-500">Coverage &amp; composition — drag a member chip to another group (same period) to move them.</p>
             </div>
           </div>
           <select
@@ -642,7 +699,12 @@ export default function ManageClasses({
                       {accts.length === 0 ? 'No account' : `${accts.length} account${accts.length === 1 ? '' : 's'}`}
                     </span>
                   </td>
-                  <td className="py-3">
+                  <td
+                    className={`py-3 rounded transition-colors ${dropTarget === `${period}-${group}` ? 'bg-blue-50 ring-1 ring-blue-300' : ''}`}
+                    onDragOver={(e) => { e.preventDefault(); setDropTarget(`${period}-${group}`); }}
+                    onDragLeave={() => setDropTarget((t) => (t === `${period}-${group}` ? null : t))}
+                    onDrop={() => handleGroupDrop(period, group)}
+                  >
                     {accts.length === 0 ? (
                       <button
                         onClick={() => shareCode(period)}
@@ -654,7 +716,14 @@ export default function ManageClasses({
                     ) : (
                       <div className="flex flex-wrap gap-1.5">
                         {accts.map((a) => (
-                          <span key={a.id} className="px-2 py-1 rounded bg-gray-100 text-gray-700 text-xs">
+                          <span
+                            key={a.id}
+                            draggable
+                            onDragStart={() => setDragMember(a)}
+                            onDragEnd={() => { setDragMember(null); setDropTarget(null); }}
+                            className="px-2 py-1 rounded bg-gray-100 text-gray-700 text-xs cursor-grab active:cursor-grabbing select-none"
+                            title="Drag to another group in the same period"
+                          >
                             {a.full_name || a.username}
                           </span>
                         ))}
@@ -721,7 +790,7 @@ export default function ManageClasses({
                       onChange={(e) => setDraftGroup(e.target.value)}
                       className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
                     >
-                      {savedGroups.map((g) => <option key={g} value={g}>{g}</option>)}
+                      {groupsFor(draftPeriod).map((g) => <option key={g} value={g}>{g}</option>)}
                     </select>
                   </div>
                   <button
@@ -815,6 +884,24 @@ export default function ManageClasses({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Refinement 3: move toast with Undo */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] bg-gray-900 text-white px-4 py-3 rounded-lg shadow-xl flex items-center gap-3 max-w-[90vw]">
+          <span className="text-sm">{toast.message}</span>
+          {toast.undo && (
+            <button
+              onClick={() => { toast.undo(); setToast(null); }}
+              className="text-sm font-semibold text-blue-300 hover:text-blue-200"
+            >
+              Undo
+            </button>
+          )}
+          <button onClick={() => setToast(null)} className="text-gray-400 hover:text-white" aria-label="Dismiss">
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
