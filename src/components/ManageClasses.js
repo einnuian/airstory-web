@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { KeyRound, GraduationCap, LockKeyhole, Trash2, MoveRight, X, Copy } from 'lucide-react';
+import { KeyRound, GraduationCap, LockKeyhole, Trash2, MoveRight, X, Copy, Mail } from 'lucide-react';
 import {
   createJoinCode,
   getClassStructure,
@@ -26,8 +26,10 @@ export default function ManageClasses({
   const [members, setMembers] = useState([]);
   const [joinCodes, setJoinCodes] = useState([]);
   const [newCode, setNewCode] = useState('');
-  const [newCodeSchool, setNewCodeSchool] = useState(viewerProfile?.school || '');
-  const [newCodeInstructor, setNewCodeInstructor] = useState(viewerProfile?.instructor || '');
+  const [newCodePeriod, setNewCodePeriod] = useState('P3'); // period a newly created code joins to
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteEmails, setInviteEmails] = useState('');
+  const [inviteSent, setInviteSent] = useState(0);
   const [error, setError] = useState('');
   const [activeStudent, setActiveStudent] = useState(null);
   const [activeAction, setActiveAction] = useState('');
@@ -103,12 +105,6 @@ export default function ManageClasses({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
 
-  // Join-code defaults always follow the teacher's saved profile (not stale typed values like old Shim/MTN12).
-  useEffect(() => {
-    setNewCodeSchool(viewerProfile?.school ?? '');
-    setNewCodeInstructor(viewerProfile?.instructor ?? '');
-  }, [viewerProfile?.school, viewerProfile?.instructor]);
-
 
   const doSaveStructure = async () => {
     const np = Number(periodCount);
@@ -177,16 +173,27 @@ export default function ManageClasses({
   };
 
   const handleCreateCode = async () => {
-    if (!newCode.trim()) return;
-    if (!/^[A-Z0-9]{5}$/.test(newCode.trim().toUpperCase())) {
+    const code = newCode.trim().toUpperCase();
+    if (!code) return;
+    if (!/^[A-Z0-9]{5}$/.test(code)) {
       setError('Join code must be exactly 5 letters/numbers.');
+      return;
+    }
+    // School + teacher are fixed class context (from My Page / profile), not per-code inputs.
+    if (MOCK_DATA_ENABLED) {
+      setJoinCodes((prev) => [
+        { id: `jc-${code}`, code, period: newCodePeriod, school_code: viewerProfile?.school || '', instructor: viewerProfile?.instructor || '', active: true, created_at: new Date().toISOString().slice(0, 10) },
+        ...prev,
+      ]);
+      setNewCode('');
+      setError('');
       return;
     }
     try {
       const created = await createJoinCode(workspaceId, {
-        code: newCode.trim().toUpperCase(),
-        schoolCode: newCodeSchool,
-        instructor: newCodeInstructor,
+        code,
+        schoolCode: viewerProfile?.school || '',
+        instructor: viewerProfile?.instructor || '',
         active: true,
       });
       setJoinCodes((prev) => [created.joinCode, ...prev]);
@@ -195,6 +202,13 @@ export default function ManageClasses({
     } catch (e) {
       setError(e.message || 'Failed to create join code.');
     }
+  };
+
+  // Frontend-only invite: mock success. TODO(backend): invitation endpoint that emails each
+  // address an invitation carrying the class join code (with an email template).
+  const handleInvite = () => {
+    const emails = inviteEmails.split(/[\s,]+/).map((e) => e.trim()).filter((e) => e.includes('@'));
+    setInviteSent(emails.length);
   };
 
   const handleToggleCode = async (code) => {
@@ -303,6 +317,7 @@ export default function ManageClasses({
   }));
   const coverageWarn = coveredGroups < totalGroupSlots;
   const schoolCode = viewerProfile?.school || '—';
+  const teacherName = viewerProfile?.instructor || MOCK_CLASS_STRUCTURE.teacher || '—';
 
   // Sessions per (period, group) for THIS teacher's class — feeds shrink protection (Section 4).
   const sessionsByGroup = {};
@@ -344,7 +359,9 @@ export default function ManageClasses({
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      {/* Section 2: Class Overview — current saved state (read-only) */}
+      {/* Row 1: Class Overview (left) + Class Structure (right) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Class Overview — current saved state (read-only) */}
       <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-200">
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
@@ -356,12 +373,13 @@ export default function ManageClasses({
               <p className="text-xs text-gray-500">Current saved structure</p>
             </div>
           </div>
-          <span className="text-xs text-gray-400 whitespace-nowrap">School changes live in My Page</span>
+          <span className="text-xs text-gray-400 text-right">School changes live in My Page</span>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           <div>
-            <p className="text-xs text-gray-500">School</p>
+            <p className="text-xs text-gray-500">School · Teacher</p>
             <p className="text-lg font-bold text-gray-900">{schoolCode}</p>
+            <p className="text-sm font-medium text-gray-600">{teacherName}</p>
           </div>
           <div>
             <p className="text-xs text-gray-500">Periods</p>
@@ -386,9 +404,7 @@ export default function ManageClasses({
         </div>
       </div>
 
-      {/* Section 3: Class structure + Join codes, side by side */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Class structure */}
+        {/* Class Structure */}
         <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-200">
           <div className="flex items-center gap-3 mb-4">
             <div className={`w-10 h-10 ${theme.bg} rounded-lg flex items-center justify-center`}>
@@ -445,57 +461,52 @@ export default function ManageClasses({
             Student sign-up period/group options follow this structure. New uploads default to the selected visibility.
           </p>
         </div>
+      </div>
 
-        {/* Student join codes */}
-        <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-200">
-          <div className="flex items-center gap-3 mb-4">
-            <div className={`w-10 h-10 ${theme.bg} rounded-lg flex items-center justify-center`}>
-              <KeyRound className="w-5 h-5 text-white" />
-            </div>
-            <h3 className="text-xl font-bold text-gray-900">Student Join Codes</h3>
+      {/* Row 2: Student Join Codes — full width */}
+      <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-200">
+        <div className="flex items-center gap-3 mb-4">
+          <div className={`w-10 h-10 ${theme.bg} rounded-lg flex items-center justify-center`}>
+            <KeyRound className="w-5 h-5 text-white" />
           </div>
-          <div className="flex flex-wrap items-center gap-2 mb-2">
-            <input
-              value={newCode}
-              onChange={(e) => setNewCode(e.target.value.toUpperCase())}
-              placeholder="5-char code"
-              maxLength={5}
-              className="px-3 py-2 border border-gray-300 rounded-lg w-32 font-mono"
-            />
-            <button
-              onClick={generateRandomCode}
-              className="px-3 py-2 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200"
-            >
-              Regenerate
-            </button>
-            <button
-              onClick={handleCreateCode}
-              className={`${theme.bg} ${theme.hover} text-white rounded-lg px-3 py-2 text-sm`}
-            >
-              Create code
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-2 mb-4">
-            <input
-              value={newCodeSchool}
-              onChange={(e) => setNewCodeSchool(e.target.value)}
-              placeholder="School"
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm w-28"
-            />
-            <input
-              value={newCodeInstructor}
-              onChange={(e) => setNewCodeInstructor(e.target.value)}
-              placeholder="Instructor"
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm flex-1 min-w-[120px]"
-            />
-          </div>
-          <div className="space-y-2">
-            {joinCodes.map((code) => (
-              <div key={code.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+          <h3 className="text-xl font-bold text-gray-900">Student Join Codes</h3>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <input
+            value={newCode}
+            onChange={(e) => setNewCode(e.target.value.toUpperCase())}
+            placeholder="5-char code"
+            maxLength={5}
+            className="px-3 py-2 border border-gray-300 rounded-lg w-32 font-mono"
+          />
+          <select
+            value={newCodePeriod}
+            onChange={(e) => setNewCodePeriod(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+          >
+            {savedPeriods.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+          <button
+            onClick={generateRandomCode}
+            className="px-3 py-2 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200"
+          >
+            Regenerate
+          </button>
+          <button
+            onClick={handleCreateCode}
+            className={`${theme.bg} ${theme.hover} text-white rounded-lg px-3 py-2 text-sm`}
+          >
+            Create code
+          </button>
+        </div>
+        <div className="space-y-2">
+          {joinCodes.map((code) => (
+            <div key={code.id} className="p-3 bg-gray-50 rounded-lg">
+              <div className="flex items-center justify-between">
                 <div>
                   <p className="font-semibold text-gray-900 font-mono">{code.code}</p>
                   <p className="text-xs text-gray-500">
-                    {code.period ? `Period ${code.period} · ` : ''}{code.school_code || 'N/A'} · {code.instructor || 'N/A'}
+                    {code.period ? `Period ${code.period}` : ''}{code.school_code ? ` · ${code.school_code}` : ''}{code.instructor ? ` · ${code.instructor}` : ''}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -516,15 +527,18 @@ export default function ManageClasses({
                   </button>
                 </div>
               </div>
-            ))}
-            {!joinCodes.length && (
-              <p className="text-sm text-gray-500">No join codes yet — create one above.</p>
-            )}
-          </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Students enter this code when creating an account — joins them to {code.period || 'this class'}.
+              </p>
+            </div>
+          ))}
+          {!joinCodes.length && (
+            <p className="text-sm text-gray-500">No join codes yet — create one above.</p>
+          )}
         </div>
       </div>
 
-      {/* Section 5: Class Roster — coverage by group */}
+      {/* Row 3: Class Roster — flat people list (actions live here) */}
       <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-200">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div className="flex items-center gap-3">
@@ -533,7 +547,64 @@ export default function ManageClasses({
             </div>
             <div>
               <h3 className="text-xl font-bold text-gray-900">Class Roster</h3>
-              <p className="text-xs text-gray-500">Every group needs ≥1 working account — members rotate through shared logins.</p>
+              <p className="text-xs text-gray-500">Everyone who joined with the class code.</p>
+            </div>
+          </div>
+          <button
+            onClick={() => { setInviteOpen(true); setInviteEmails(''); setInviteSent(0); }}
+            className={`${theme.bg} ${theme.hover} text-white rounded-lg px-4 py-2 text-sm inline-flex items-center gap-2`}
+          >
+            <Mail className="w-4 h-4" />
+            Invite student
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200">
+                <th className="py-2 pr-4">Name</th>
+                <th className="py-2 pr-4">Username</th>
+                <th className="py-2 pr-4">Group</th>
+                <th className="py-2 pr-4">Joined</th>
+                <th className="py-2 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {studentMembers.map((m) => (
+                <tr key={m.id}>
+                  <td className="py-3 pr-4 font-medium text-gray-900">
+                    {m.full_name ? m.full_name : <span className="text-gray-400 italic">{m.username}</span>}
+                  </td>
+                  <td className="py-3 pr-4 text-gray-600 font-mono text-xs">{m.username}</td>
+                  <td className="py-3 pr-4 whitespace-nowrap">{m.period} · {m.group_code}</td>
+                  <td className="py-3 pr-4 text-gray-500 whitespace-nowrap">{m.joined_at}</td>
+                  <td className="py-3">
+                    <div className="flex items-center gap-1 justify-end">
+                      <button onClick={() => openStudentAction(m, 'password')} title="Reset password" className="px-2 py-1.5 rounded text-xs bg-amber-50 text-amber-700 hover:bg-amber-100 inline-flex items-center gap-1"><LockKeyhole className="w-3.5 h-3.5" />PW</button>
+                      <button onClick={() => openStudentAction(m, 'move')} title="Move period/group" className="px-2 py-1.5 rounded text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 inline-flex items-center gap-1"><MoveRight className="w-3.5 h-3.5" />Move</button>
+                      <button onClick={() => setRemoveTarget(m)} title="Remove account" className="px-2 py-1.5 rounded text-xs bg-red-50 text-red-700 hover:bg-red-100 inline-flex items-center gap-1"><Trash2 className="w-3.5 h-3.5" />Remove</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {studentMembers.length === 0 && (
+                <tr><td colSpan={5} className="py-6 text-center text-gray-400">No students yet — share a join code.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Row 4: Groups — composition & coverage (no member actions; those live in the Roster) */}
+      <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-200">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 ${theme.bg} rounded-lg flex items-center justify-center`}>
+              <GraduationCap className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-gray-900">Groups</h3>
+              <p className="text-xs text-gray-500">Composition &amp; coverage — every group needs ≥1 working account.</p>
             </div>
           </div>
           <select
@@ -551,7 +622,7 @@ export default function ManageClasses({
               <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200">
                 <th className="py-2 pr-4">Group</th>
                 <th className="py-2 pr-4">Coverage</th>
-                <th className="py-2">Member accounts</th>
+                <th className="py-2">Members</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -581,19 +652,11 @@ export default function ManageClasses({
                         Share code
                       </button>
                     ) : (
-                      <div className="space-y-2">
+                      <div className="flex flex-wrap gap-1.5">
                         {accts.map((a) => (
-                          <div key={a.id} className="flex flex-wrap items-center justify-between gap-2">
-                            <div>
-                              <p className="font-medium text-gray-900">{a.username}</p>
-                              <p className="text-xs text-gray-500">Joined {a.joined_at}</p>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <button onClick={() => openStudentAction(a, 'password')} title="Reset password" className="px-2 py-1.5 rounded text-xs bg-amber-50 text-amber-700 hover:bg-amber-100 inline-flex items-center gap-1"><LockKeyhole className="w-3.5 h-3.5" />PW</button>
-                              <button onClick={() => openStudentAction(a, 'move')} title="Move period/group" className="px-2 py-1.5 rounded text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 inline-flex items-center gap-1"><MoveRight className="w-3.5 h-3.5" />Move</button>
-                              <button onClick={() => setRemoveTarget(a)} title="Remove account" className="px-2 py-1.5 rounded text-xs bg-red-50 text-red-700 hover:bg-red-100 inline-flex items-center gap-1"><Trash2 className="w-3.5 h-3.5" />Remove</button>
-                            </div>
-                          </div>
+                          <span key={a.id} className="px-2 py-1 rounded bg-gray-100 text-gray-700 text-xs">
+                            {a.full_name || a.username}
+                          </span>
                         ))}
                       </div>
                     )}
@@ -689,6 +752,47 @@ export default function ManageClasses({
         </div>
       )}
 
+      {/* Invite students modal — frontend + mock success only */}
+      {inviteOpen && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setInviteOpen(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+              <h4 className="font-bold text-gray-900">Invite students</h4>
+              <button onClick={() => setInviteOpen(false)} className="p-1.5 rounded-lg hover:bg-gray-100">
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              {inviteSent > 0 ? (
+                <p className="text-sm text-green-700">
+                  Sent {inviteSent} invitation{inviteSent === 1 ? '' : 's'} carrying the class join code. (Mock — no email actually sent.)
+                </p>
+              ) : (
+                <>
+                  <p className="text-xs text-gray-500">
+                    Enter one or more email addresses (comma- or newline-separated). Each gets an invitation email with your class join code.
+                  </p>
+                  <textarea
+                    value={inviteEmails}
+                    onChange={(e) => setInviteEmails(e.target.value)}
+                    rows={3}
+                    placeholder="student@example.com, student2@example.com"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                  {/* TODO(backend): invitation endpoint + email template carrying the join code. */}
+                  <button
+                    onClick={handleInvite}
+                    className={`${theme.bg} ${theme.hover} text-white rounded-lg px-4 py-2 text-sm`}
+                  >
+                    Send invitations
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Section 6: Teacher Workflow help (behind the ? icon by the title) */}
       {showHelp && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowHelp(false)}>
@@ -701,7 +805,7 @@ export default function ManageClasses({
             </div>
             <ul className="p-6 text-sm text-gray-700 space-y-2 list-disc ml-4">
               <li>Create and share join codes with students for signup.</li>
-              <li>Open a group&apos;s Raw Data straight from its roster row.</li>
+              <li>Open a group&apos;s Raw Data from the Groups section; manage individual members in the Roster.</li>
               <li>Reset student passwords when needed (teacher support flow).</li>
               <li>Use period/group selections here to drive Raw Data and Analysis comparisons.</li>
             </ul>
