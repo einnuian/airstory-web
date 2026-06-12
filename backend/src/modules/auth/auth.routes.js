@@ -189,57 +189,6 @@ router.post("/register", validate(registerSchema), async (req, res, next) => {
   }
 });
 
-/**
- * Passwordless “enter the group room” for the PHG static site.
- * Issues the same JWT as /login for the shared phg-students workspace member — no bcrypt.
- * Intentionally public: anyone with the API URL gets read/write for that classroom workspace
- * (same threat model as embedding the password in the frontend bundle).
- */
-router.post("/phg-session", async (req, res, next) => {
-  try {
-    const email = "phg-students@airstory.local";
-    const userResult = await pool.query(
-      `SELECT id, email, full_name FROM users
-       WHERE LOWER(TRIM(email)) = $1`,
-      [email]
-    );
-    if (!userResult.rowCount) {
-      return res.status(503).json({
-        error:
-          "PHG shared student is not set up on this database. On Render: Shell → npm run db:upsert-teacher (or deploy the latest backend that runs it on start).",
-      });
-    }
-    const user = userResult.rows[0];
-
-    const wsResult = await pool.query(
-      `SELECT wm.workspace_id
-       FROM workspace_memberships wm
-       JOIN workspaces w ON w.id = wm.workspace_id
-       WHERE wm.user_id = $1
-       ORDER BY w.created_at DESC
-       LIMIT 1`,
-      [user.id]
-    );
-    const workspaceId = wsResult.rows[0]?.workspace_id || null;
-    if (!workspaceId) {
-      return res.status(503).json({
-        error:
-          "PHG shared account has no workspace. Run npm run db:upsert-teacher on the server.",
-      });
-    }
-
-    const auth = makeAuthResponse(user, workspaceId);
-    await pool.query(
-      `INSERT INTO refresh_tokens (user_id, token, expires_at)
-       VALUES ($1, $2, NOW() + INTERVAL '30 days')`,
-      [user.id, auth.refreshToken]
-    );
-    res.json(auth);
-  } catch (error) {
-    next(error);
-  }
-});
-
 router.post("/login", validate(loginSchema), async (req, res, next) => {
   try {
     const { email, password } = req.validated.body;
