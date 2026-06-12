@@ -78,7 +78,7 @@ const METRIC_THEMES = {
 // DEV ONLY - REMOVE BEFORE DEPLOY
 // Flip DEV_SKIP_LOGIN to false (or delete this block) to restore the normal login flow.
 // When true, the app skips LandingPage and opens directly on Raw Data as a fake signed-in user.
-const DEV_SKIP_LOGIN = true;
+const DEV_SKIP_LOGIN = false;
 // DEV ONLY - REMOVE BEFORE DEPLOY: which role the bypass signs in as.
 // "teacher" renders the teacher-only UI (Manage Classes, teacher nav/labels);
 // "student" is the prior behavior. Flip back to "student" when done previewing.
