@@ -37,7 +37,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   group_code TEXT DEFAULT '',
   started_at TIMESTAMPTZ,
   ended_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  visibility TEXT NOT NULL DEFAULT 'group' CHECK (visibility IN ('public', 'school', 'group')), -- raw data session visibility
+  owner_student_code TEXT DEFAULT '' --identify owner of the session
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_workspace_id ON sessions(workspace_id);
