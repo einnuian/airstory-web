@@ -54,7 +54,7 @@ export async function apiRequest(path, options = {}) {
   let response;
   try {
     response = await fetch(`${API_BASE}${path}`, {
-      ...options,
+      ...options, /** If no method is specified here, fetch defaults to GET */
       headers,
     });
   } catch (err) {
