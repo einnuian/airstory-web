@@ -23,7 +23,7 @@
  * session — see the "one-reading-per-session" flags noted to the team.
  */
 
-export const MOCK_DATA_ENABLED = true;
+export const MOCK_DATA_ENABLED = false;
 
 /** The fake "current student": school, code, and the single class-period they belong to. */
 export const MOCK_IDENTITY = {

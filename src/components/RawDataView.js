@@ -10,7 +10,7 @@ import {
   normalizeIndoorOutdoor,
   uniqueHierarchyFromImportedRows,
 } from '../utils/importedData';
-import { workspaceMeasurementsToDisplayRows } from '../utils/measurementRows';
+import { workspaceMeasurementsToDisplayRows, isRowVisibleToViewer } from '../utils/measurementRows';
 import DataCalendar from './DataCalendar';
 import ConfirmDialog from './ConfirmDialog';
 import {
@@ -22,7 +22,6 @@ import {
   MOCK_DATA_ENABLED,
   MOCK_IDENTITY,
   MOCK_MEASUREMENTS,
-  isRowVisibleToViewer,
 } from '../constants/mockMeasurements';
 
 const CSV_UPLOAD_CHUNK_SIZE = 2500;
