@@ -24,7 +24,7 @@ const ComparisonModal = ({
   const schoolChipList =
     comparisonSchoolCodes?.length > 0
       ? comparisonSchoolCodes
-      : [...new Set([currentFilters?.school, 'PHG01'].filter(Boolean))];
+      : [...new Set([currentFilters?.school].filter(Boolean))];
   const groupButtonList =
     workspaceGroups?.length > 0
       ? workspaceGroups
@@ -704,7 +704,7 @@ const AnalysisView = ({
 
   const comparisonSchoolCodes = useMemo(() => {
     const fromFile = [...new Set(imported.map((r) => r.school).filter(Boolean))];
-    const merged = [...new Set([filters.school, ...fromFile, 'PHG01'])].filter(Boolean);
+    const merged = [...new Set([filters.school, ...fromFile])].filter(Boolean);
     return merged.sort();
   }, [imported, filters.school]);
 

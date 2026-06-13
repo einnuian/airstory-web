@@ -75,6 +75,7 @@ const METRIC_THEMES = {
   }
 };
 
+
 export default function App() {
   const storedAuth = getStoredAuth();
   const [isLoggedIn, setIsLoggedIn] = useState(Boolean(storedAuth?.accessToken));
@@ -475,7 +476,7 @@ export default function App() {
             >
               <img 
                 src="/logo.svg" 
-                alt="Air Story" 
+                alt="AirStory"
                 className="h-12 w-auto"
                 onError={(e) => {
                   // Fallback to text if image fails to load
@@ -484,7 +485,7 @@ export default function App() {
                 }}
               />
               <h1 className="text-2xl font-bold text-gray-900 tracking-tight" style={{display: 'none'}}>
-                Air Story
+                AirStory
               </h1>
             </button>
 

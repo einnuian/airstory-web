@@ -17,6 +17,8 @@ export function mapApiMeasurementsToFlatRows(measurements) {
     sessionName: m.session_name || m.session_code || "Session",
     sessionNotes: m.session_notes || "",
     location: m.location_name || "Unknown",
+    visibility: m.visibility || 'group',
+    ownerCode: m.owner_student_code || '',
     latitude:
       m.latitude != null && m.latitude !== ""
         ? (Number.isFinite(Number(m.latitude)) ? Number(m.latitude) : null)
@@ -112,4 +114,26 @@ export function workspaceMeasurementsToDisplayRows(measurements) {
   const filtered = filterNonDemoMeasurements(measurements);
   const flat = mapApiMeasurementsToFlatRows(filtered);
   return groupMeasurementRowsForDisplay(flat);
+}
+
+/**
+ * True if `row` is visible to `identity` under the phone-set visibility rules.
+ * Three levels: 'public' (everyone), 'school' (same school), 'group' (default — that
+ * exact group's members). TODO(researcher-mode): 'class' and 'me' were removed for now
+ * and are reserved for a future researcher mode.
+ */
+export function isRowVisibleToViewer(row, identity) {
+  switch (row.visibility) {
+    case 'public':
+      return true;
+    case 'school':
+      return row.school === identity.school;
+    case 'group':
+      // Group only → visible to members of that exact group (teacher + period + group).
+      return (identity.memberships || []).some(
+        (m) => m.instructor === row.instructor && m.period === row.period && m.group === row.group
+      );
+    default:
+      return true;
+  }
 }
