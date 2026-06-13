@@ -11,9 +11,6 @@ import {
   updateClassStructure,
   updateStudentPlacement,
 } from '../api/auth';
-// DEV ONLY - MOCK DATA - REMOVE BEFORE DEPLOY
-import { MOCK_DATA_ENABLED, MOCK_CLASS_STRUCTURE, MOCK_ROSTER, MOCK_JOIN_CODES } from '../constants/mockTeacher';
-import { MOCK_MEASUREMENTS } from '../constants/mockMeasurements';
 import ConfirmDialog from './ConfirmDialog';
 
 export default function ManageClasses({
@@ -78,18 +75,6 @@ export default function ManageClasses({
   };
 
   const load = async () => {
-    // DEV ONLY - MOCK DATA: populate from the teacher mock when there's no backend.
-    if (MOCK_DATA_ENABLED) {
-      setMembers(MOCK_ROSTER);
-      setJoinCodes(MOCK_JOIN_CODES);
-      setPeriodCount(MOCK_CLASS_STRUCTURE.periods.length);
-      setSavedGroupCounts(MOCK_CLASS_STRUCTURE.groupCounts);
-      setPeriodLabels(MOCK_CLASS_STRUCTURE.periods);
-      setDraftRows(MOCK_CLASS_STRUCTURE.periods.map((p) => ({ name: p, groups: MOCK_CLASS_STRUCTURE.groupCounts[p], savedName: p })));
-      setDefaultVisibility(MOCK_CLASS_STRUCTURE.defaultVisibility || 'group');
-      setError('');
-      return;
-    }
     if (!workspaceId) return;
     try {
       const [roster, codes, structure] = await Promise.all([
@@ -129,26 +114,6 @@ export default function ManageClasses({
     if (names.some((n) => !n)) { setError('Period names cannot be empty.'); return; }
     if (new Set(names).size !== names.length) { setError('Period names must be unique.'); return; }
 
-    if (MOCK_DATA_ENABLED) {
-      // Period naming: a kept row whose name changed from its savedName is a rename → propagate
-      // to members and join codes so roster / groups / codes / overview all follow the new name.
-      const renames = {};
-      active.forEach((r, i) => {
-        if (r.savedName && r.savedName !== names[i]) renames[r.savedName] = names[i];
-      });
-      if (Object.keys(renames).length) {
-        setMembers((prev) => prev.map((m) => (renames[m.period] ? { ...m, period: renames[m.period] } : m)));
-        setJoinCodes((prev) => prev.map((c) => (renames[c.period] ? { ...c, period: renames[c.period] } : c)));
-      }
-      const nextCounts = {};
-      active.forEach((r, i) => { nextCounts[names[i]] = Number(r.groups) || 0; });
-      setPeriodLabels(names);
-      setSavedGroupCounts(nextCounts);
-      setDraftRows(active.map((r, i) => ({ name: names[i], groups: Number(r.groups) || 0, savedName: names[i] })));
-      setPeriodCount(names.length);
-      setError('');
-      return;
-    }
     try {
       setBusy(true);
       // TODO(backend): structure model needs a per-period list of { name, groupCount } with
@@ -229,7 +194,7 @@ export default function ManageClasses({
     const fromGroup = m.group_code;
     const applyGroup = (g) => {
       setMembers((prev) => prev.map((x) => (x.id === m.id ? { ...x, group_code: g } : x)));
-      if (!MOCK_DATA_ENABLED) updateStudentPlacement(workspaceId, m.id, { period, groupCode: g }).catch(() => {});
+      updateStudentPlacement(workspaceId, m.id, { period, groupCode: g }).catch(() => {});
     };
     applyGroup(group);
     showToast(`Moved ${m.full_name || m.username} to ${period} · ${group}`, () => applyGroup(fromGroup));
@@ -242,11 +207,6 @@ export default function ManageClasses({
 
   const doRemoveStudent = async (student) => {
     if (!student) return;
-    if (MOCK_DATA_ENABLED) {
-      setMembers((prev) => prev.filter((m) => m.id !== student.id));
-      setRemoveTarget(null);
-      return;
-    }
     try {
       setBusy(true);
       await removeStudent(workspaceId, student.id);
@@ -268,15 +228,6 @@ export default function ManageClasses({
       return;
     }
     // School + teacher are fixed class context (from My Page / profile), not per-code inputs.
-    if (MOCK_DATA_ENABLED) {
-      setJoinCodes((prev) => [
-        { id: `jc-${code}`, code, period: newCodePeriod, school_code: viewerProfile?.school || '', instructor: viewerProfile?.instructor || '', active: true, created_at: new Date().toISOString().slice(0, 10) },
-        ...prev,
-      ]);
-      setNewCode('');
-      setError('');
-      return;
-    }
     try {
       const created = await createJoinCode(workspaceId, {
         code,
@@ -300,10 +251,6 @@ export default function ManageClasses({
   };
 
   const handleToggleCode = async (code) => {
-    if (MOCK_DATA_ENABLED) {
-      setJoinCodes((prev) => prev.map((c) => (c.id === code.id ? { ...c, active: !c.active } : c)));
-      return;
-    }
     try {
       const updated = await setJoinCodeActive(workspaceId, code.id, !code.active);
       setJoinCodes((prev) => prev.map((c) => (c.id === code.id ? updated.joinCode : c)));
@@ -315,14 +262,6 @@ export default function ManageClasses({
 
   const handleResetPassword = async (student) => {
     if (!draftPassword) return;
-    if (MOCK_DATA_ENABLED) {
-      setDraftPassword('');
-      setActiveStudent(null);
-      setActiveAction('');
-      // eslint-disable-next-line no-alert
-      alert(`Password reset for ${student.full_name} (mock)`);
-      return;
-    }
     try {
       setBusy(true);
       await resetStudentPassword(workspaceId, student.id, draftPassword);
@@ -349,12 +288,6 @@ export default function ManageClasses({
 
   const handleMoveStudent = async () => {
     if (!activeStudent) return;
-    if (MOCK_DATA_ENABLED) {
-      setMembers((prev) => prev.map((m) => (m.id === activeStudent.id ? { ...m, period: draftPeriod, group_code: draftGroup } : m)));
-      setActiveStudent(null);
-      setActiveAction('');
-      return;
-    }
     try {
       setBusy(true);
       await updateStudentPlacement(workspaceId, activeStudent.id, { period: draftPeriod, groupCode: draftGroup });
@@ -406,17 +339,10 @@ export default function ManageClasses({
   }));
   const coverageWarn = coveredGroups < totalGroupSlots;
   const schoolCode = viewerProfile?.school || '—';
-  const teacherName = viewerProfile?.instructor || MOCK_CLASS_STRUCTURE.teacher || '—';
+  const teacherName = viewerProfile?.instructor || '—';
 
   // Sessions per (period, group) for THIS teacher's class — feeds shrink protection (Section 4).
   const sessionsByGroup = {};
-  if (MOCK_DATA_ENABLED) {
-    MOCK_MEASUREMENTS.forEach((s) => {
-      if (s.instructor !== viewerProfile?.instructor) return;
-      const key = `${s.period} ${s.group}`;
-      sessionsByGroup[key] = (sessionsByGroup[key] || 0) + 1;
-    });
-  }
 
   // Roster rows: one per (period, group) in the saved structure, filtered by the period filter (Section 5).
   const rosterRows = [];

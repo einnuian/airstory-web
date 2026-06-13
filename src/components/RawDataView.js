@@ -17,12 +17,6 @@ import {
   SENSOR_CSV_EXPORT_HEADERS,
   csvEscapeCell,
 } from '../constants/sensorCsv';
-// DEV ONLY - MOCK DATA - REMOVE BEFORE DEPLOY
-import {
-  MOCK_DATA_ENABLED,
-  MOCK_IDENTITY,
-  MOCK_MEASUREMENTS,
-} from '../constants/mockMeasurements';
 
 const CSV_UPLOAD_CHUNK_SIZE = 2500;
 
@@ -44,8 +38,6 @@ const cToF = (c) => Math.round((Number(c) * 9) / 5 + 32);
 const fToC = (f) => Math.round(((Number(f) - 32) * 5) / 9);
 
 // Read-only visibility pills (Section 4). Visibility is set on the phone before upload.
-// TODO(backend): replace mock `visibility` with the real `visibility` field once
-// GET /workspaces/:id/measurements returns it (see mockMeasurements.js).
 // Three levels: Group only (default) | School only | Public.
 // TODO(researcher-mode): 'class'/'me' removed for now — reserved for a future researcher mode.
 const VISIBILITY_META = {
@@ -68,12 +60,7 @@ const RawDataView = ({
   metricThemes,
   onImportedDataChanged,
 }) => {
-  const [rawData, setRawData] = useState(() => {
-    const imported = getImportedMeasurements();
-    // DEV ONLY - MOCK DATA: seed the redesign with stub rows when nothing is imported.
-    if (MOCK_DATA_ENABLED && imported.length === 0) return MOCK_MEASUREMENTS;
-    return imported;
-  });
+  const [rawData, setRawData] = useState(() => getImportedMeasurements());
   const [loadingBackend, setLoadingBackend] = useState(false);
   const [importError, setImportError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
@@ -88,22 +75,17 @@ const RawDataView = ({
   const [selectedGroup, setSelectedGroup] = useState(filters.group || '');
 
   // --- Redesign: viewer identity + scope (Group / Class / School) ---
-  // DEV ONLY - MOCK DATA: identity comes from the mock student until real auth carries it.
-  const viewerIdentity = useMemo(() => (
-    MOCK_DATA_ENABLED
-      ? MOCK_IDENTITY
-      : {
-          school: viewerProfile?.school || '',
-          studentCode: viewerProfile?.studentId || '',
-          memberships: [
-            {
-              instructor: viewerProfile?.instructor || '',
-              period: viewerProfile?.period || '',
-              group: viewerProfile?.group || '',
-            },
-          ],
-        }
-  ), [viewerProfile]);
+  const viewerIdentity = useMemo(() => ({
+    school: viewerProfile?.school || '',
+    studentCode: viewerProfile?.studentId || '',
+    memberships: [
+      {
+        instructor: viewerProfile?.instructor || '',
+        period: viewerProfile?.period || '',
+        group: viewerProfile?.group || '',
+      },
+    ],
+  }), [viewerProfile]);
   const primaryMembership = viewerIdentity.memberships[0] || { instructor: '', period: '', group: '' };
   const viewerClassKeys = viewerIdentity.memberships.map((m) => ck(m.instructor, m.period));
 
