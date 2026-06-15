@@ -1,5 +1,24 @@
-import bcrypt from "bcryptjs";
 import { pool } from "./pool.js";
+import { firebaseAuth } from "../config/firebase-admin.js";
+
+/**
+ * Create (or update) the Firebase account for a seeded user and return its uid.
+ * Firebase owns credentials now, so seeded logins only work if these accounts exist there too.
+ */
+async function ensureFirebaseUser(email, password, displayName) {
+  const auth = firebaseAuth();
+  try {
+    const existing = await auth.getUserByEmail(email);
+    await auth.updateUser(existing.uid, { password, displayName });
+    return existing.uid;
+  } catch (error) {
+    if (error.code === "auth/user-not-found") {
+      const created = await auth.createUser({ email, password, displayName });
+      return created.uid;
+    }
+    throw error;
+  }
+}
 
 const WORKSPACE_NAME = "Lincoln High School";
 const SCHOOL_CODE = "LINCOLN";
@@ -86,28 +105,28 @@ const STUDENTS = [
 async function run() {
   await pool.query("BEGIN");
   try {
-    // --- Users ---
-    const teacherHash = await bcrypt.hash("rivera2026", 10);
+    // --- Users (provisioned in Firebase, then linked here by firebase_uid) ---
+    const teacherUid = await ensureFirebaseUser("rivera@lincoln.mock", "rivera2026", "Ms. Rivera");
     const teacherRes = await pool.query(
-      `INSERT INTO users (email, password_hash, full_name)
+      `INSERT INTO users (email, firebase_uid, full_name)
        VALUES ($1, $2, $3)
-       ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, full_name = EXCLUDED.full_name
+       ON CONFLICT (email) DO UPDATE SET firebase_uid = EXCLUDED.firebase_uid, full_name = EXCLUDED.full_name
        RETURNING id`,
-      ["rivera@lincoln.mock", teacherHash, "Ms. Rivera"]
+      ["rivera@lincoln.mock", teacherUid, "Ms. Rivera"]
     );
     const teacherId = teacherRes.rows[0].id;
 
-    const studentHash = await bcrypt.hash("lincoln2026", 10);
     const studentIds = {};
     for (const s of STUDENTS) {
       const email = `${s.username}@lincoln.mock`;
       const name = s.fullName || s.username;
+      const uid = await ensureFirebaseUser(email, "lincoln2026", name);
       const res = await pool.query(
-        `INSERT INTO users (email, password_hash, full_name)
+        `INSERT INTO users (email, firebase_uid, full_name)
          VALUES ($1, $2, $3)
-         ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, full_name = EXCLUDED.full_name
+         ON CONFLICT (email) DO UPDATE SET firebase_uid = EXCLUDED.firebase_uid, full_name = EXCLUDED.full_name
          RETURNING id`,
-        [email, studentHash, name]
+        [email, uid, name]
       );
       studentIds[s.username] = res.rows[0].id;
     }
