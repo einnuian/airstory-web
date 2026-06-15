@@ -492,7 +492,7 @@ export default function ManageClasses({
             </div>
             <p className="text-xs text-gray-500 mt-2">Edit a period name to rename it — renames apply to codes, roster, and groups on save.</p>
             {/* TODO(backend): structure model needs a per-period list of { name, groupCount } with
-                rename support (renames propagate to members/codes). Propose in API_REFERENCE.md. */}
+                rename support (renames propagate to members/codes). Propose in docs/openapi.yaml. */}
           </div>
           <button
             disabled={busy}
