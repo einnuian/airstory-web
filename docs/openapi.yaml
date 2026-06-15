@@ -4,7 +4,9 @@ info:
   version: 1.0.0
   description: >
     REST API for the Airstory web app.
-    All protected endpoints require a JWT Bearer token obtained via /auth/login or /auth/register.
+    Firebase is the identity provider. Protected endpoints require a Firebase ID token as a
+    Bearer credential; sign-in, token refresh, sign-out, and password changes happen client-side
+    via the Firebase SDK. See docs/openapi.yaml (this file) for the full contract.
 
 servers:
   - url: http://localhost:4000/api
@@ -20,16 +22,15 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
-      bearerFormat: JWT
+      bearerFormat: Firebase ID token
+      description: >
+        Firebase ID token from the client SDK. The backend verifies it with Firebase Admin
+        and maps the Firebase uid to the app user via users.firebase_uid.
 
   schemas:
-    AuthTokens:
+    AuthUser:
       type: object
       properties:
-        accessToken:
-          type: string
-        refreshToken:
-          type: string
         user:
           type: object
           properties:
@@ -343,22 +344,23 @@ paths:
   /auth/register:
     post:
       tags: [Auth]
-      summary: Register a new user
-      security: []
+      summary: Provision the app account for a Firebase-authenticated user
+      description: >
+        The Firebase account is created on the client first; this endpoint provisions the
+        matching app account (workspace, membership, profile) and links it via firebase_uid
+        from the verified token. Identity email comes from the token.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [email, password, fullName]
+              required: [fullName]
               properties:
                 email:
                   type: string
                   format: email
-                password:
-                  type: string
-                  minLength: 8
+                  description: Optional fallback; used only if the Firebase token has no email
                 fullName:
                   type: string
                   minLength: 2
@@ -395,158 +397,25 @@ paths:
                   description: 5-character alphanumeric join code (required for students)
       responses:
         '201':
-          description: User created
+          description: App account provisioned
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthTokens'
+                $ref: '#/components/schemas/AuthUser'
         '400':
           description: Validation error (e.g. student requires join code, invalid period/group)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid Firebase ID token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '409':
-          description: Email already exists
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-
-  /auth/login:
-    post:
-      tags: [Auth]
-      summary: Log in with email and password
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [email, password]
-              properties:
-                email:
-                  type: string
-                  format: email
-                password:
-                  type: string
-      responses:
-        '200':
-          description: Login successful
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AuthTokens'
-        '401':
-          description: Invalid credentials
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-
-  /auth/phg-session:
-    post:
-      tags: [Auth]
-      summary: Open a passwordless PHG shared student session
-      description: >
-        Issues a JWT for the shared `phg-students` backend account without
-        requiring credentials. Used by the PHG static site.
-      security: []
-      responses:
-        '200':
-          description: Session tokens for the shared PHG account
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AuthTokens'
-        '503':
-          description: PHG shared account not configured or has no workspace
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-
-  /auth/refresh:
-    post:
-      tags: [Auth]
-      summary: Refresh an access token
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [refreshToken]
-              properties:
-                refreshToken:
-                  type: string
-      responses:
-        '200':
-          description: New access token
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  accessToken:
-                    type: string
-        '400':
-          description: refreshToken is required
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '401':
-          description: Refresh token invalid or expired
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-
-  /auth/logout:
-    post:
-      tags: [Auth]
-      summary: Log out and invalidate refresh token
-      security: []
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                refreshToken:
-                  type: string
-      responses:
-        '204':
-          description: Logged out successfully
-
-  /auth/change-password:
-    post:
-      tags: [Auth]
-      summary: Change the authenticated user's password
-      description: Invalidates all existing refresh tokens on success.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [email, newPassword]
-              properties:
-                email:
-                  type: string
-                  format: email
-                  description: Must match the signed-in user's email
-                newPassword:
-                  type: string
-                  minLength: 8
-      responses:
-        '204':
-          description: Password changed
-        '403':
-          description: Email does not match signed-in account
+          description: Email already exists, or this Firebase account is already registered
           content:
             application/json:
               schema:
@@ -911,7 +780,9 @@ paths:
     post:
       tags: [Auth]
       summary: Reset a student's password (teacher action)
-      description: Requires owner or teacher role. Invalidates the student's refresh tokens.
+      description: >
+        Requires owner or teacher role. Resets the student's password in Firebase via the
+        Admin SDK. Existing sessions stay valid until their ID token expires (~1 hour).
       parameters:
         - name: workspaceId
           in: path
@@ -947,6 +818,12 @@ paths:
                 $ref: '#/components/schemas/Error'
         '404':
           description: Student not found in this workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Student has no Firebase account
           content:
             application/json:
               schema:
