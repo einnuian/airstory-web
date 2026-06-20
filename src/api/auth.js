@@ -1,6 +1,8 @@
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  GoogleAuthProvider,
+  signInWithPopup,
   signOut,
   updatePassword,
 } from "firebase/auth";
@@ -15,6 +17,54 @@ export async function login(email, password) {
   // (e.g. getMe) attach the resulting ID token automatically.
   await signInWithEmailAndPassword(auth, normalizedEmail, password);
   return null;
+}
+
+/**
+ * Sign in (or sign up) with Google via a popup. Returns the Firebase user so the caller can
+ * pre-fill onboarding (name/email). Whether the user already has an app account is determined
+ * separately by calling getMe(); first-time users get a 401 and are routed to onboarding.
+ */
+export async function loginWithGoogle() {
+  const provider = new GoogleAuthProvider();
+  const cred = await signInWithPopup(auth, provider);
+  return cred.user;
+}
+
+/**
+ * Provision the app account (workspace / membership / profile) for a user who is ALREADY signed
+ * in to Firebase (e.g. via Google). Unlike register(), this does not create a Firebase identity —
+ * it only POSTs /auth/register with the existing ID token. On failure the caller stays signed in
+ * to Firebase and can retry; we sign out rather than delete the federated account.
+ */
+export async function completeRegistration({
+  email,
+  fullName,
+  workspaceName,
+  role,
+  schoolCode,
+  instructor,
+  period,
+  groupCode,
+  studentCode,
+  joinWorkspaceId,
+  joinCode,
+}) {
+  return apiRequest("/auth/register", {
+    method: "POST",
+    body: JSON.stringify({
+      email: String(email || "").trim().toLowerCase(),
+      fullName,
+      workspaceName: workspaceName || "Default Workspace",
+      role: role || "student",
+      schoolCode: schoolCode || "",
+      instructor: instructor || "",
+      period: period || "",
+      groupCode: groupCode || "",
+      studentCode: studentCode || "",
+      joinWorkspaceId,
+      joinCode: joinCode || undefined,
+    }),
+  });
 }
 
 /** Changes the signed-in user's own Firebase password. `email` is a confirmation field. */

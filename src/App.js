@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState, useRef } from "react";
 import LandingPage from "./components/LandingPage";
+import OnboardingForm from "./components/OnboardingForm";
 import HeatMapDashboard from "./components/HeatMapDashboard";
 import RawDataView from "./components/RawDataView";
 import AnalysisView from "./components/AnalysisView";
@@ -11,6 +12,8 @@ import { auth } from "./firebase";
 import {
   login as loginApi,
   register as registerApi,
+  loginWithGoogle as loginWithGoogleApi,
+  completeRegistration as completeRegistrationApi,
   getMe,
   logout as logoutApi,
   getClassStructure,
@@ -94,6 +97,10 @@ export default function App() {
   });
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
+  // First-time federated (e.g. Google) sign-in: signed in to Firebase but no app account yet.
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [onboardingSubmitting, setOnboardingSubmitting] = useState(false);
+  const [onboardingError, setOnboardingError] = useState("");
   const [importedDataVersion, setImportedDataVersion] = useState(0);
   /** Server profile placement snapshot; only when this changes do we overwrite student explorer filters (CSV / drill-down). */
   const lastProfileHierarchySnapRef = useRef("");
@@ -140,6 +147,8 @@ export default function App() {
     if (!isLoggedIn) return;
     try {
       const me = await getMe();
+      // The user has an app account, so they're past onboarding.
+      setNeedsOnboarding(false);
       const membership = me?.memberships?.[0] || null;
       const profile = me?.profile || null;
       const nextRole = membership?.role || userRole || "student";
@@ -204,8 +213,12 @@ export default function App() {
           /* leave previous structure */
         }
       }
-    } catch {
-      // keep current session state when me endpoint is temporarily unavailable
+    } catch (e) {
+      // A "no account" 401 means this Firebase user hasn't finished registration -> onboarding.
+      // Any other error (e.g. transient network) leaves the current session state untouched.
+      if (String(e?.message || "").toLowerCase().includes("no account")) {
+        setNeedsOnboarding(true);
+      }
     }
   }, [isLoggedIn, userRole]);
 
@@ -318,6 +331,51 @@ export default function App() {
     } finally {
       setAuthLoading(false);
     }
+  };
+
+  const handleGoogleLogin = async () => {
+    setAuthError("");
+    setAuthLoading(true);
+    try {
+      await loginWithGoogleApi();
+      // onAuthStateChanged flips isLoggedIn; syncFromMe then either hydrates an existing
+      // account or sets needsOnboarding for a first-time user.
+    } catch (error) {
+      setAuthError(error.message || "Google sign-in failed");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  // First-time federated users finish here: confirm name + role (+ join code for students).
+  const handleCompleteOnboarding = async ({ fullName, role, joinCode }) => {
+    setOnboardingError("");
+    setOnboardingSubmitting(true);
+    try {
+      const cu = auth.currentUser;
+      const email = cu?.email || "";
+      await completeRegistrationApi({
+        email,
+        fullName,
+        role,
+        workspaceName: role === "teacher" ? `${fullName} Workspace` : "Air Story class",
+        studentCode: role === "student" && email ? email.split("@")[0].toUpperCase() : "",
+        joinCode: role === "student" ? joinCode : undefined,
+      });
+      setNeedsOnboarding(false);
+      await syncFromMe();
+      setActiveSection(role === "teacher" ? "manageclasses" : "heatmap");
+    } catch (error) {
+      setOnboardingError(error.message || "Could not finish setting up your account.");
+    } finally {
+      setOnboardingSubmitting(false);
+    }
+  };
+
+  const handleCancelOnboarding = async () => {
+    setNeedsOnboarding(false);
+    setOnboardingError("");
+    await handleLogout();
   };
 
   const handleRegister = async ({ email, password, fullName, mode, period, group, instructor, joinCode }) => {
@@ -461,9 +519,36 @@ export default function App() {
           <LandingPage
             onLogin={handleLogin}
             onRegister={handleRegister}
+            onGoogleLogin={handleGoogleLogin}
             filters={filters}
             authError={authError}
             authLoading={authLoading}
+          />
+        </main>
+        <footer className="py-8 text-center text-gray-400 text-sm font-bold uppercase tracking-widest">
+          <p>Air Story • TAMGU LAB @TC</p>
+        </footer>
+      </div>
+    );
+  }
+
+  if (needsOnboarding) {
+    return (
+      <div className="min-h-screen bg-slate-50 font-sans text-slate-900 selection:bg-blue-100"
+           style={{
+             backgroundImage: `radial-gradient(#cbd5e1 1px, transparent 1px)`,
+             backgroundSize: '24px 24px'
+           }}
+      >
+        <div className="w-full h-1.5 bg-gradient-to-r from-blue-500 via-cyan-400 to-blue-600 sticky top-0 z-50" />
+        <main className="min-h-screen flex flex-col justify-center py-12 px-4">
+          <OnboardingForm
+            defaultName={auth.currentUser?.displayName || ""}
+            email={auth.currentUser?.email || ""}
+            onSubmit={handleCompleteOnboarding}
+            onCancel={handleCancelOnboarding}
+            submitting={onboardingSubmitting}
+            error={onboardingError}
           />
         </main>
         <footer className="py-8 text-center text-gray-400 text-sm font-bold uppercase tracking-widest">

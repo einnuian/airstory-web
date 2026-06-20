@@ -233,6 +233,7 @@ export default function ManageClasses({
         code,
         schoolCode: viewerProfile?.school || '',
         instructor: viewerProfile?.instructor || '',
+        period: newCodePeriod || '',
         active: true,
       });
       setJoinCodes((prev) => [created.joinCode, ...prev]);
