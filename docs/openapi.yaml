@@ -117,7 +117,7 @@ components:
           format: email
         role:
           type: string
-          enum: [owner, teacher, student]
+          enum: [teacher, student]
         school_code:
           type: string
         instructor:
@@ -454,7 +454,7 @@ paths:
                           format: uuid
                         role:
                           type: string
-                          enum: [owner, teacher, student]
+                          enum: [teacher, student]
                   profile:
                     $ref: '#/components/schemas/UserProfile'
 
@@ -582,7 +582,7 @@ paths:
     get:
       tags: [Auth]
       summary: List all join codes for a workspace
-      description: Requires owner or teacher role.
+      description: Requires teacher role.
       parameters:
         - name: workspaceId
           in: path
@@ -612,7 +612,7 @@ paths:
     post:
       tags: [Auth]
       summary: Create a join code for a workspace
-      description: Requires owner or teacher role.
+      description: Requires teacher role.
       parameters:
         - name: workspaceId
           in: path
@@ -669,7 +669,7 @@ paths:
     patch:
       tags: [Auth]
       summary: Activate or deactivate a join code
-      description: Requires owner or teacher role.
+      description: Requires teacher role.
       parameters:
         - name: workspaceId
           in: path
@@ -738,7 +738,7 @@ paths:
     patch:
       tags: [Auth]
       summary: Update the period/group counts for a workspace
-      description: Requires owner or teacher role.
+      description: Requires teacher role.
       parameters:
         - name: workspaceId
           in: path
@@ -781,7 +781,7 @@ paths:
       tags: [Auth]
       summary: Reset a student's password (teacher action)
       description: >
-        Requires owner or teacher role. Resets the student's password in Firebase via the
+        Requires teacher role. Resets the student's password in Firebase via the
         Admin SDK. Existing sessions stay valid until their ID token expires (~1 hour).
       parameters:
         - name: workspaceId
@@ -833,7 +833,7 @@ paths:
     patch:
       tags: [Auth]
       summary: Move a student to a different period/group
-      description: Requires owner or teacher role.
+      description: Requires teacher role.
       parameters:
         - name: workspaceId
           in: path
@@ -899,7 +899,7 @@ paths:
     delete:
       tags: [Auth]
       summary: Remove a student from a workspace
-      description: Requires owner or teacher role. Deletes the student's profile in this workspace.
+      description: Requires teacher role. Deletes the student's profile in this workspace.
       parameters:
         - name: workspaceId
           in: path
@@ -958,7 +958,7 @@ paths:
     post:
       tags: [Sessions]
       summary: Create a new session
-      description: Requires owner or teacher role.
+      description: Requires teacher role.
       parameters:
         - name: workspaceId
           in: path
@@ -1025,7 +1025,7 @@ paths:
     delete:
       tags: [Sessions]
       summary: Delete a session and all its measurements
-      description: Requires owner or teacher role.
+      description: Requires teacher role.
       parameters:
         - name: workspaceId
           in: path
@@ -1123,7 +1123,7 @@ paths:
     post:
       tags: [Measurements]
       summary: Create a single measurement
-      description: Requires owner or teacher role.
+      description: Requires teacher role.
       parameters:
         - name: workspaceId
           in: path
@@ -1185,7 +1185,7 @@ paths:
       summary: Delete all measurements, sessions, and edits in a workspace
       description: >
         Destructive — clears the entire workspace dataset.
-        Requires owner or teacher role.
+        Requires teacher role.
       parameters:
         - name: workspaceId
           in: path
@@ -1207,7 +1207,7 @@ paths:
     patch:
       tags: [Measurements]
       summary: Update sensor values on a measurement
-      description: Requires owner or teacher role.
+      description: Requires teacher role.
       parameters:
         - name: workspaceId
           in: path
@@ -1272,7 +1272,7 @@ paths:
     post:
       tags: [Measurements]
       summary: Record a corrected value for a measurement field
-      description: Available to all workspace roles (owner, teacher, student).
+      description: Available to all workspace roles (teacher, student).
       parameters:
         - name: workspaceId
           in: path
@@ -1638,7 +1638,7 @@ paths:
         Exports all sessions and up to 5000 measurements to the configured
         Google Sheet. Requires GOOGLE_SHEET_ID, GOOGLE_SERVICE_ACCOUNT_EMAIL,
         and GOOGLE_PRIVATE_KEY environment variables on the server.
-        Requires owner or teacher role.
+        Requires teacher role.
       parameters:
         - name: workspaceId
           in: path
