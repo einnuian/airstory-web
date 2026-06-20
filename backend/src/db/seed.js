@@ -153,7 +153,7 @@ async function run() {
     );
     await pool.query(
       `INSERT INTO workspace_memberships (workspace_id, user_id, role)
-       VALUES ($1, $2, 'owner')
+       VALUES ($1, $2, 'teacher')
        ON CONFLICT (workspace_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
       [workspaceId, teacherId]
     );
@@ -266,7 +266,7 @@ async function run() {
       workspaceId,
       workspaceName: WORKSPACE_NAME,
       schoolCode: SCHOOL_CODE,
-      teacher: { email: "rivera@lincoln.mock", password: "rivera2026", role: "owner" },
+      teacher: { email: "rivera@lincoln.mock", password: "rivera2026", role: "teacher" },
       students: STUDENTS.map((s) => ({ email: `${s.username}@lincoln.mock`, password: "lincoln2026", period: s.period, group: s.group, studentCode: s.studentCode })),
       joinCodes: [{ code: "P3RVK", active: true }, { code: "P5RVM", active: false }],
       sessions: SESSION_SPECS.length,

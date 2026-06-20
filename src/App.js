@@ -143,7 +143,7 @@ export default function App() {
       const membership = me?.memberships?.[0] || null;
       const profile = me?.profile || null;
       const nextRole = membership?.role || userRole || "student";
-      const isTeacherRole = nextRole === "teacher" || nextRole === "owner";
+      const isTeacherRole = nextRole === "teacher";
       // On a fresh page load there is no persisted workspace id (Firebase only restores identity),
       // so hydrate it here from the membership returned by the backend.
       if (membership?.workspace_id) setWorkspaceId(membership.workspace_id);
@@ -299,7 +299,7 @@ export default function App() {
         studentId: profile?.student_code || email.split("@")[0].toUpperCase(),
       });
       setIsLoggedIn(true);
-      setActiveSection((membership?.role === "teacher" || membership?.role === "owner") ? "manageclasses" : "heatmap");
+      setActiveSection((membership?.role === "teacher") ? "manageclasses" : "heatmap");
       const school = profile?.school_code ?? "";
       const instructor = profile?.instructor ?? "";
       const period = profile?.period ?? "";
@@ -361,7 +361,7 @@ export default function App() {
         studentId: profile?.student_code || email.split("@")[0].toUpperCase(),
       });
       setIsLoggedIn(true);
-      setActiveSection((membership?.role === "teacher" || membership?.role === "owner") ? "manageclasses" : "heatmap");
+      setActiveSection((membership?.role === "teacher") ? "manageclasses" : "heatmap");
       const rs = profile?.school_code ?? "";
       const ri = profile?.instructor ?? "";
       const rp = profile?.period ?? "";
@@ -416,7 +416,7 @@ export default function App() {
     setActiveSection("rawdata");
   };
 
-  const isTeacher = userRole === "teacher" || userRole === "owner";
+  const isTeacher = userRole === "teacher";
 
   const teacherNavInitials = () => {
     const name = (viewerProfile.displayName || "").trim();

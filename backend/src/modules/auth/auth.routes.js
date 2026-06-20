@@ -157,11 +157,7 @@ router.post("/register", validate(registerSchema), async (req, res, next) => {
     const membershipRole =
       role === "student"
         ? "student"
-        : joinWorkspaceId
-          ? role === "teacher"
-            ? "teacher"
-            : "student"
-          : "owner";
+        : "teacher";
 
     await client.query(
       `INSERT INTO workspace_memberships (workspace_id, user_id, role)
@@ -317,7 +313,7 @@ router.get("/workspaces/:workspaceId/roster", requireAuth, async (req, res) => {
 router.get(
   "/workspaces/:workspaceId/join-codes",
   requireAuth,
-  requireWorkspaceRole(["owner", "teacher"]),
+  requireWorkspaceRole(["teacher"]),
   async (req, res) => {
     const { workspaceId } = req.params;
     const result = await pool.query(
@@ -334,7 +330,7 @@ router.get(
 router.get(
   "/workspaces/:workspaceId/class-structure",
   requireAuth,
-  requireWorkspaceRole(["owner", "teacher", "student"]),
+  requireWorkspaceRole(["teacher", "student"]),
   async (req, res) => {
     const { workspaceId } = req.params;
     const structure = await getWorkspaceStructure(workspaceId);
@@ -345,7 +341,7 @@ router.get(
 router.patch(
   "/workspaces/:workspaceId/class-structure",
   requireAuth,
-  requireWorkspaceRole(["owner", "teacher"]),
+  requireWorkspaceRole(["teacher"]),
   validate(updateClassStructureSchema),
   async (req, res) => {
     const { workspaceId } = req.params;
@@ -369,7 +365,7 @@ router.patch(
 router.post(
   "/workspaces/:workspaceId/join-codes",
   requireAuth,
-  requireWorkspaceRole(["owner", "teacher"]),
+  requireWorkspaceRole(["teacher"]),
   validate(createJoinCodeSchema),
   async (req, res, next) => {
     try {
@@ -394,7 +390,7 @@ router.post(
 router.patch(
   "/workspaces/:workspaceId/join-codes/:codeId",
   requireAuth,
-  requireWorkspaceRole(["owner", "teacher"]),
+  requireWorkspaceRole(["teacher"]),
   validate(toggleJoinCodeSchema),
   async (req, res) => {
     const { workspaceId, codeId } = req.params;
@@ -414,7 +410,7 @@ router.patch(
 router.post(
   "/workspaces/:workspaceId/users/:userId/reset-password",
   requireAuth,
-  requireWorkspaceRole(["owner", "teacher"]),
+  requireWorkspaceRole(["teacher"]),
   validate(resetStudentPasswordSchema),
   async (req, res) => {
     const { workspaceId, userId } = req.params;
@@ -444,7 +440,7 @@ router.post(
 router.patch(
   "/workspaces/:workspaceId/users/:userId/placement",
   requireAuth,
-  requireWorkspaceRole(["owner", "teacher"]),
+  requireWorkspaceRole(["teacher"]),
   validate(updateStudentPlacementSchema),
   async (req, res) => {
     const { workspaceId, userId } = req.params;
@@ -473,7 +469,7 @@ router.patch(
 router.delete(
   "/workspaces/:workspaceId/users/:userId",
   requireAuth,
-  requireWorkspaceRole(["owner", "teacher"]),
+  requireWorkspaceRole(["teacher"]),
   validate(removeStudentSchema),
   async (req, res, next) => {
     const client = await pool.connect();
