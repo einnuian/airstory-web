@@ -76,6 +76,10 @@ components:
           type: string
         instructor:
           type: string
+        period:
+          type: string
+          description: Class period this code enrolls students into (assigned automatically on signup)
+          example: P3
         active:
           type: boolean
         created_at:
@@ -381,15 +385,17 @@ paths:
                 period:
                   type: string
                   maxLength: 16
+                  description: Ignored for students — a student's period is taken from the join code
                 groupCode:
                   type: string
                   maxLength: 16
+                  description: Ignored for students — the teacher assigns a student's group later
                 studentCode:
                   type: string
                 joinWorkspaceId:
                   type: string
                   format: uuid
-                  description: UUID of the workspace to join (required for students)
+                  description: UUID of an existing workspace to join (teacher invite flow)
                 joinCode:
                   type: string
                   minLength: 5
@@ -403,7 +409,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AuthUser'
         '400':
-          description: Validation error (e.g. student requires join code, invalid period/group)
+          description: Validation error (e.g. student signup requires a valid, active join code)
           content:
             application/json:
               schema:
@@ -526,6 +532,10 @@ paths:
                     type: string
                   instructor:
                     type: string
+                  period:
+                    type: string
+                    description: The period this code assigns the student to (the student does not choose it)
+                    example: P3
                   periods:
                     type: array
                     items:
@@ -639,6 +649,11 @@ paths:
                 instructor:
                   type: string
                   default: ''
+                period:
+                  type: string
+                  default: ''
+                  description: Class period students who use this code are enrolled into
+                  example: P3
                 active:
                   type: boolean
                   default: true
