@@ -802,6 +802,7 @@ const HeatMapDashboard = ({
               <LoadScript
                 googleMapsApiKey={googleMapsApiKey}
                 libraries={GOOGLE_MAP_LIBRARIES}
+                version="quarterly"
                 onLoad={() => setMapsLoadError('')}
                 onError={() => {
                   setMapsLoadError(
